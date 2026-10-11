@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- Stage 1: builder ----------
-FROM oven/bun:1.4.2-slim AS builder
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.2-slim AS builder
 WORKDIR /app
 
 COPY package.json bun.lock tsconfig.base.json ./
