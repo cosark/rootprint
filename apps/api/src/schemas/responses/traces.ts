@@ -61,7 +61,8 @@ export const ExploreSpanRowSchema = named(
 
 export const ExploreSpansResponseSchema = named(
 	'ExploreSpansResponse',
-	v.object({ rows: v.array(ExploreSpanRowSchema), total: v.number() })
+	// Null past the first page, which skips the exact count.
+	v.object({ rows: v.array(ExploreSpanRowSchema), total: v.nullable(v.number()) })
 );
 
 const latencyPercentiles = {

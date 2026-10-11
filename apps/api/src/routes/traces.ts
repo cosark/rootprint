@@ -65,7 +65,7 @@ export const tracesRouter = new Hono<AuthedEnv>()
 				config.traceIndexId,
 				{ query: exploreQuery(params), startTs: params.startTs, endTs: params.endTs },
 				() => getExploreSpans(quickwit, config.traceIndexId, params),
-				(r) => (params.offset === 0 ? r.total : null)
+				(r) => r.total
 			);
 			return c.json(result);
 		}

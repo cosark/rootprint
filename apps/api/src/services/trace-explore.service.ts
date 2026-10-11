@@ -117,7 +117,7 @@ export async function getExploreSpans(
 		const sign = order === 'desc' ? -1 : 1;
 		rows.sort((a, b) => sign * (a.durationMicros - b.durationMicros));
 	}
-	return { rows, total: response.num_hits };
+	return { rows, total: params.offset === 0 ? response.num_hits : null };
 }
 
 const PERCENTS = [50, 95, 99];
