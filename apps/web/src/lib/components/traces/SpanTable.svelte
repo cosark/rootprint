@@ -77,7 +77,7 @@
 				return true;
 			});
 			rows = pageOffset === 0 ? fresh : [...rows, ...fresh];
-			total = result.total;
+			if (pageOffset === 0) total = result.total;
 			offset = pageOffset + EXPLORE_PAGE_SIZE;
 		} catch (error) {
 			if (!guard.isCurrent(token)) return;

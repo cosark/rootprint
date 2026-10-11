@@ -376,7 +376,7 @@ export const indexesRouter = new Hono<AuthedEnv>()
 				indexConfig.indexId,
 				{ query: q.q ?? '', startTs: q.startTs, endTs: q.endTs },
 				() => searchLogs(quickwit, indexConfig, q),
-				(response) => response.numHits
+				(response) => (q.countAll ? response.numHits : null)
 			);
 			return c.json(result);
 		}
