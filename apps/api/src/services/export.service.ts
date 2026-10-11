@@ -156,6 +156,7 @@ export async function buildExportBody(
 			.query(q.q || '*')
 			.limit(EXPORT_MAX_ROWS)
 			.sortBy(indexConfig.timestampField, 'asc')
+			.countAll(false)
 			.timeRange(toQuickwitTimestamp(q.startTs), toQuickwitTimestamp(q.endTs))
 	);
 

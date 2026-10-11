@@ -63,8 +63,8 @@ export async function searchLogs(
 		.limit(q.limit ?? 50)
 		.offset(q.offset ?? 0)
 		.sortBy(indexConfig.timestampField, q.sortOrder ?? 'desc')
+		.countAll(q.countAll ?? false)
 		.timeRange(toQuickwitTimestamp(q.startTs), toQuickwitTimestamp(q.endTs));
-	if (q.countAll) builder.countAll();
 	const response = await idx.search(builder).catch(translateQuickwitError);
 	return {
 		hits: response.hits,

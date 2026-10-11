@@ -340,6 +340,7 @@ export async function getServiceErrors(
 		.limit(params.limit)
 		.offset(params.offset)
 		.sortBy(TIMESTAMP_FIELD, 'desc')
+		.countAll(false)
 		.timeRange(toQuickwitTimestamp(params.startTs), toQuickwitTimestamp(params.endTs));
 	const response = await idx.search(builder).catch(orEmptyStore(traceIndexId, 'service errors'));
 	if (response === null) return { rows: [], hasMore: false };

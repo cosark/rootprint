@@ -102,7 +102,7 @@ export async function getExploreSpans(
 		.limit(params.limit)
 		.offset(params.offset)
 		.sortBy(field, order)
-		.countAll()
+		.countAll(params.offset === 0)
 		.timeRange(toQuickwitTimestamp(params.startTs), toQuickwitTimestamp(params.endTs));
 	// Floored millis tie a lot; the tiebreak keeps those ties in the same order on every page.
 	if (byDuration) builder.sortBy(TIMESTAMP_FIELD, 'desc');
@@ -117,7 +117,7 @@ export async function getExploreSpans(
 		const sign = order === 'desc' ? -1 : 1;
 		rows.sort((a, b) => sign * (a.durationMicros - b.durationMicros));
 	}
-	return { rows, total: response.num_hits };
+	return { rows, total: params.offset === 0 ? response.num_hits : null };
 }
 
 const PERCENTS = [50, 95, 99];
