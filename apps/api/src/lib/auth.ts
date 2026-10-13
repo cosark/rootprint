@@ -32,43 +32,109 @@ const unavailable = {
 	errorDescription: 'Could not verify OAuth access right now'
 };
 
+type ValidateUserInfo = NonNullable<NonNullable<BetterAuthOptions['user']>['validateUserInfo']>;
+type SocialProviders = NonNullable<BetterAuthOptions['socialProviders']>;
+
+// Runs for every OAuth create, link, and repeat sign-in, before any row is written.
+const validateUserInfo: ValidateUserInfo = async ({ user, source }) => {
+	if (source.method !== 'oauth' || !source.oauth) return;
+	if (source.oauth.providerId === 'google') {
+		let allowed: boolean;
+		try {
+			allowed = !!user.email && (await googleEmailIsAllowed(db, user.email));
+		} catch (err) {
+			logger.error({ err }, 'google domain check unavailable');
+			return unavailable;
+		}
+		if (!allowed) {
+			return { error: 'domain_not_allowed', errorDescription: 'Email domain not allowed' };
+		}
+		return;
+	}
+	if (source.oauth.providerId === 'github') {
+		const profile = source.oauth.profile as { orgAllowed?: boolean | null } | undefined;
+		const orgAllowed = profile?.orgAllowed;
+		if (orgAllowed === null) return unavailable;
+		if (!orgAllowed) {
+			return {
+				error: 'org_not_allowed',
+				errorDescription: 'GitHub organization not allowed'
+			};
+		}
+	}
+};
+
+function oidcPlugin(
+	oidc: NonNullable<AuthConfig['oidc']>,
+	authentication: AuthConfig['oidcTokenAuth']
+) {
+	return genericOAuth({
+		config: [
+			{
+				providerId: 'oidc',
+				discoveryUrl: discoveryUrl(oidc.issuerUrl),
+				clientId: oidc.clientId,
+				clientSecret: oidc.clientSecret,
+				authentication,
+				scopes: ['openid', 'profile', 'email'],
+				requireIdTokenVerification: true,
+				// Keep sign-out local; the client would otherwise follow the IdP end-session redirect.
+				disableProviderLogout: true,
+				// `sub` is unique only within an issuer. Qualifying it means a row left over
+				// from a previous issuer can never match a subject from the current one.
+				accountSubject: ({ profile }) => {
+					const sub = profile.sub;
+					if (sub === undefined || sub === null || sub === '') {
+						throw new Error('ID token carries no sub');
+					}
+					return `${oidc.issuerUrl}|${String(sub)}`;
+				}
+			}
+		]
+	});
+}
+
+function githubProvider(
+	creds: NonNullable<AuthConfig['github']>
+): NonNullable<SocialProviders['github']> {
+	const stock = github({ clientId: creds.clientId, clientSecret: creds.clientSecret });
+	return {
+		clientId: creds.clientId,
+		clientSecret: creds.clientSecret,
+		scope: ['read:org', 'user:email'],
+		getUserInfo: async (token) => {
+			const info = await stock.getUserInfo(token);
+			// A null profile ends the callback as unable_to_get_user_info before the hook runs.
+			if (!info) return null;
+			let orgAllowed: boolean | null;
+			try {
+				orgAllowed = await githubTokenIsAllowed(db, token.accessToken);
+			} catch (err) {
+				logger.error({ err }, 'github org check unavailable');
+				orgAllowed = null;
+			}
+			return { ...info, data: { ...info.data, orgAllowed } as typeof info.data };
+		}
+	};
+}
+
 function buildAuth(secret: string, cfg: AuthConfig) {
-	const oidc = cfg.oidc;
 	const trustedOrigins = [config.origin, ...(config.frontendUrl ? [config.frontendUrl] : [])];
+	const socialProviders: SocialProviders = {};
+	if (cfg.google) {
+		socialProviders.google = {
+			clientId: cfg.google.clientId,
+			clientSecret: cfg.google.clientSecret
+		};
+	}
+	if (cfg.github) socialProviders.github = githubProvider(cfg.github);
+	const trustedProviders = (['google', 'github', 'oidc'] as const).filter((id) => cfg[id]);
 
 	const opts: BetterAuthOptions = {
 		database: drizzleAdapter(db, { provider: 'pg', schema: authSchema }),
 		plugins: [
 			apiKey(apiKeyPluginConfig),
-			...(oidc
-				? [
-						genericOAuth({
-							config: [
-								{
-									providerId: 'oidc',
-									discoveryUrl: discoveryUrl(oidc.issuerUrl),
-									clientId: oidc.clientId,
-									clientSecret: oidc.clientSecret,
-									authentication: cfg.oidcTokenAuth,
-									scopes: ['openid', 'profile', 'email'],
-									requireIdTokenVerification: true,
-									// Keep sign-out local; the client would otherwise follow the IdP end-session redirect.
-									disableProviderLogout: true,
-									// `sub` is unique only within an issuer. Qualifying it means a row left over
-									// from a previous issuer can never match a subject from the current one.
-									accountSubject: ({ profile }) => {
-										// Numeric subjects are legal, so only an absent or empty one is refused.
-										const sub = profile.sub;
-										if (sub === undefined || sub === null || sub === '') {
-											throw new Error('ID token carries no sub');
-										}
-										return `${oidc.issuerUrl}|${String(sub)}`;
-									}
-								}
-							]
-						})
-					]
-				: [])
+			...(cfg.oidc ? [oidcPlugin(cfg.oidc, cfg.oidcTokenAuth)] : [])
 		],
 		disabledPaths: cfg.passwordSignInDisabled ? ['/sign-in/email'] : [],
 		trustedOrigins,
@@ -81,36 +147,12 @@ function buildAuth(secret: string, cfg: AuthConfig) {
 		// at its own origin, which a relative path would strand split deployments on.
 		onAPIError: { errorURL: `${config.frontendUrl ?? config.origin}/auth/sign-in` },
 		emailAndPassword: { enabled: true, disableSignUp: true },
-		user: {
-			additionalFields: USER_ADDITIONAL_FIELDS,
-			// Runs for every OAuth create, link, and repeat sign-in, before any row is written.
-			validateUserInfo: async ({ user, source }) => {
-				if (source.method !== 'oauth' || !source.oauth) return;
-				if (source.oauth.providerId === 'google') {
-					let allowed: boolean;
-					try {
-						allowed = !!user.email && (await googleEmailIsAllowed(db, user.email));
-					} catch (err) {
-						logger.error({ err }, 'google domain check unavailable');
-						return unavailable;
-					}
-					if (!allowed) {
-						return { error: 'domain_not_allowed', errorDescription: 'Email domain not allowed' };
-					}
-					return;
-				}
-				if (source.oauth.providerId === 'github') {
-					const profile = source.oauth.profile as { orgAllowed?: boolean | null } | undefined;
-					const orgAllowed = profile?.orgAllowed;
-					if (orgAllowed === null) return unavailable;
-					if (!orgAllowed) {
-						return {
-							error: 'org_not_allowed',
-							errorDescription: 'GitHub organization not allowed'
-						};
-					}
-				}
-			}
+		user: { additionalFields: USER_ADDITIONAL_FIELDS, validateUserInfo },
+		socialProviders,
+		account: {
+			encryptOAuthTokens: true,
+			// Local verification is relaxed because only admins create users here.
+			accountLinking: { enabled: true, trustedProviders, requireLocalEmailVerified: false }
 		},
 		databaseHooks: {
 			account: {
@@ -124,45 +166,6 @@ function buildAuth(secret: string, cfg: AuthConfig) {
 				}
 			}
 		}
-	};
-	const socialProviders: NonNullable<BetterAuthOptions['socialProviders']> = {};
-	if (cfg.google) {
-		socialProviders.google = {
-			clientId: cfg.google.clientId,
-			clientSecret: cfg.google.clientSecret
-		};
-	}
-	if (cfg.github) {
-		const creds = { clientId: cfg.github.clientId, clientSecret: cfg.github.clientSecret };
-		const stock = github(creds);
-		socialProviders.github = {
-			...creds,
-			// read:org resolves private org memberships; user:email is required by GitHub.
-			scope: ['read:org', 'user:email'],
-			// validateUserInfo never sees the access token, so the org verdict rides on the profile.
-			getUserInfo: async (token) => {
-				const info = await stock.getUserInfo(token);
-				// A null profile ends the callback as unable_to_get_user_info before the hook runs.
-				if (!info) return null;
-				let orgAllowed: boolean | null;
-				try {
-					orgAllowed = await githubTokenIsAllowed(db, token.accessToken);
-				} catch (err) {
-					logger.error({ err }, 'github org check unavailable');
-					orgAllowed = null;
-				}
-				return { ...info, data: { ...info.data, orgAllowed } as typeof info.data };
-			}
-		};
-	}
-	if (cfg.google || cfg.github) opts.socialProviders = socialProviders;
-	// The admin's own IdP is trusted like Google and GitHub: many providers (Entra ID
-	// among them) never send email_verified, and untrusted linking requires it.
-	const trustedProviders = (['google', 'github', 'oidc'] as const).filter((id) => cfg[id]);
-	opts.account = {
-		encryptOAuthTokens: true,
-		// Local verification is relaxed because only admins create users here.
-		accountLinking: { enabled: true, trustedProviders, requireLocalEmailVerified: false }
 	};
 	return betterAuth(opts);
 }
