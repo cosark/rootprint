@@ -7,10 +7,11 @@ import { HttpError } from '../utils/http-error.js';
 
 const MAX_MSG = 500;
 
-export async function pruneSearchAudit(db: Db, retentionDays: number): Promise<void> {
-	await db
+export async function pruneSearchAudit(db: Db, retentionDays: number): Promise<number> {
+	const result = await db
 		.delete(searchAudit)
 		.where(sql`${searchAudit.executedAt} < now() - make_interval(days => ${retentionDays})`);
+	return result.rowCount ?? 0;
 }
 
 function extractAuditError(err: unknown): { code: string; message: string } {
@@ -68,7 +69,10 @@ export async function withSearchAudit<Result>(
 				numHits: resultCount(result)
 			})
 			.catch((insertErr) =>
-				logger.error({ err: insertErr, indexId }, 'search audit insert failed')
+				logger.error(
+					{ err: insertErr, 'rootprint.index.id': indexId },
+					'search audit insert failed'
+				)
 			);
 		return result;
 	} catch (err) {
@@ -82,7 +86,10 @@ export async function withSearchAudit<Result>(
 				errorMessage: message
 			})
 			.catch((insertErr) =>
-				logger.error({ err: insertErr, indexId }, 'search audit insert failed')
+				logger.error(
+					{ err: insertErr, 'rootprint.index.id': indexId },
+					'search audit insert failed'
+				)
 			);
 		throw err;
 	}

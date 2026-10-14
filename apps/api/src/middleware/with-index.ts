@@ -6,6 +6,7 @@ import { quickwit } from '../lib/quickwit/client.js';
 import { getIndexConfig, getIndexMeta } from '../services/index.service.js';
 import type { IndexConfig, IndexMeta } from '../services/index.service.js';
 import { notFound } from '../utils/http-error.js';
+import { addLogAttrs } from './request-logging.js';
 
 type IndexMetaEnv = AuthedEnv & {
 	Variables: AuthedEnv['Variables'] & { indexMeta: IndexMeta };
@@ -22,6 +23,7 @@ export type IndexConfigEnv = AuthedEnv & {
 export const withIndexMeta: MiddlewareHandler<IndexMetaEnv> = async (c, next) => {
 	const indexId = c.req.param('indexId');
 	if (!indexId) throw notFound('Index not found');
+	addLogAttrs(c, { 'rootprint.index.id': indexId });
 	c.set('indexMeta', await getIndexMeta(db, quickwit, indexId));
 	await next();
 };
@@ -30,6 +32,7 @@ export const withIndexMeta: MiddlewareHandler<IndexMetaEnv> = async (c, next) =>
 export const withIndexConfig: MiddlewareHandler<IndexConfigEnv> = async (c, next) => {
 	const indexId = c.req.param('indexId');
 	if (!indexId) throw notFound('Index not found');
+	addLogAttrs(c, { 'rootprint.index.id': indexId });
 	c.set('indexConfig', await getIndexConfig(db, quickwit, indexId));
 	await next();
 };

@@ -33,7 +33,7 @@ import { auditActor, withSearchAudit } from './search-audit.service.js';
 import { exploreQuery, getExploreSpans } from './trace-explore.service.js';
 import { getTrace } from './trace.service.js';
 
-export type McpContext = { userId: string; apiKeyId?: string; requestId: string };
+export type McpContext = { userId: string; apiKeyId?: string };
 
 const MAX_STRING_CHARS = 2_000;
 // Claude Code drops MCP results over ~25k tokens; an error that says how to narrow beats a lost call.
@@ -57,11 +57,7 @@ function truncateString(_key: string, value: unknown): unknown {
  * The SDK turns a thrown error into a tool result carrying its raw message, which would bypass
  * app.onError's masking, so every handler runs through here and applies the same rule.
  */
-async function runTool(
-	ctx: McpContext,
-	tool: string,
-	run: () => Promise<unknown>
-): Promise<CallToolResult> {
+async function runTool(tool: string, run: () => Promise<unknown>): Promise<CallToolResult> {
 	try {
 		const text = JSON.stringify(await run(), truncateString);
 		if (text.length > MAX_OUTPUT_CHARS) {
@@ -81,7 +77,7 @@ async function runTool(
 		if (err instanceof HttpError && isPublicError(err)) {
 			return { content: [{ type: 'text', text: err.message }], isError: true };
 		}
-		logger.error({ err: raw, requestId: ctx.requestId, tool }, 'mcp tool failed');
+		logger.error({ err: raw, 'gen_ai.tool.name': tool }, 'mcp tool failed');
 		return { content: [{ type: 'text', text: 'Internal server error' }], isError: true };
 	}
 }
@@ -139,7 +135,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
 			annotations: { readOnlyHint: true },
 			inputSchema: toStandardJsonSchema(ListIndexesInput)
 		},
-		() => runTool(ctx, 'list_indexes', () => listIndexes(db, quickwit))
+		() => runTool('list_indexes', () => listIndexes(db, quickwit))
 	);
 
 	server.registerTool(
@@ -151,7 +147,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
 			inputSchema: toStandardJsonSchema(GetIndexFieldsInput)
 		},
 		({ indexId, start, end }) =>
-			runTool(ctx, 'get_index_fields', async () => {
+			runTool('get_index_fields', async () => {
 				const range = timeRange(start, end);
 				const meta = await getIndexMeta(db, quickwit, indexId);
 				const view = getIndexViewConfig(meta);
@@ -178,7 +174,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
 			inputSchema: toStandardJsonSchema(SearchLogsInput)
 		},
 		({ indexId, query, start, end, limit, sort }) =>
-			runTool(ctx, 'search_logs', async () => {
+			runTool('search_logs', async () => {
 				const { startTs, endTs } = timeRange(start, end);
 				const indexConfig = await getIndexConfig(db, quickwit, indexId);
 				const result = await withSearchAudit(
@@ -210,7 +206,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
 			inputSchema: toStandardJsonSchema(LogHistogramInput)
 		},
 		({ indexId, query, start, end, interval }) =>
-			runTool(ctx, 'log_histogram', async () => {
+			runTool('log_histogram', async () => {
 				const { startTs, endTs } = timeRange(start, end);
 				const chosen = histogramInterval(interval, endTs - startTs);
 				const indexConfig = await getIndexConfig(db, quickwit, indexId);
@@ -240,7 +236,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
 			inputSchema: toStandardJsonSchema(FieldValuesInput)
 		},
 		({ indexId, fields, query, start, end, limit }) =>
-			runTool(ctx, 'field_values', async () => {
+			runTool('field_values', async () => {
 				const { startTs, endTs } = timeRange(start, end);
 				const indexConfig = await getIndexConfig(db, quickwit, indexId);
 				const { values, truncated } = await fieldValuesBulk(quickwit, indexConfig, {
@@ -268,7 +264,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
 			inputSchema: toStandardJsonSchema(SearchSpansInput)
 		},
 		({ query, start, end, ...filters }) =>
-			runTool(ctx, 'search_spans', async () => {
+			runTool('search_spans', async () => {
 				const { startTs, endTs, rangeSeconds } = timeRange(start, end);
 				if (rangeSeconds > MAX_RANGE_SECONDS) {
 					throw badRequest('Trace range cannot exceed 30 days');
@@ -316,7 +312,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
 			inputSchema: toStandardJsonSchema(GetTraceInput)
 		},
 		({ traceId }) =>
-			runTool(ctx, 'get_trace', async () => {
+			runTool('get_trace', async () => {
 				const trace = await withSearchAudit(
 					db,
 					actor,

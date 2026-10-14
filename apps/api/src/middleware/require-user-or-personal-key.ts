@@ -6,7 +6,6 @@ import { user } from '../db/schema.js';
 import type { AuthedEnv } from '../env.js';
 import { auth } from '../lib/auth.js';
 import { db } from '../lib/db.js';
-import { logger } from '../lib/logger.js';
 import { extractBearerToken } from '../utils/bearer.js';
 import { forbidden, internal, unauthorized } from '../utils/http-error.js';
 import { requireUser } from './require-user.js';
@@ -38,8 +37,7 @@ export function requireUserOrPersonalKey(required: Scope): MiddlewareHandler<Aut
 				body: { key: bearer, permissions: required }
 			});
 		} catch (err) {
-			logger.error({ err, requestId: c.get('requestId') }, 'personal api key verification failed');
-			throw internal('API key verification failed');
+			throw internal('API key verification failed', undefined, err);
 		}
 
 		if (!result.valid || !result.key) {

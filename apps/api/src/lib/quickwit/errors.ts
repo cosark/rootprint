@@ -43,7 +43,9 @@ export function quickwitErrorToHttp(err: QuickwitError): HttpError {
 		default:
 			return serviceUnavailable(
 				'Search backend is temporarily unavailable — please retry',
-				'UPSTREAM_UNAVAILABLE'
+				'UPSTREAM_UNAVAILABLE',
+				undefined,
+				err
 			);
 	}
 }

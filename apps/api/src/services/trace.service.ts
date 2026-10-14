@@ -55,7 +55,10 @@ export function httpStatusOf(attributes: Record<string, unknown>): number | null
 export function orEmptyStore(traceIndexId: string, surface: string) {
 	return (err: unknown): null => {
 		if (err instanceof QuickwitError && err.code === QuickwitErrorCode.NOT_FOUND) {
-			logger.warn({ traceIndexId }, `span store not found — ${surface} will read as empty`);
+			logger.warn(
+				{ 'rootprint.index.id': traceIndexId },
+				`span store not found — ${surface} will read as empty`
+			);
 			return null;
 		}
 		return translateQuickwitError(err);

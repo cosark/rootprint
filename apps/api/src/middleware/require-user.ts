@@ -6,7 +6,6 @@ import { user } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { auth } from '../lib/auth.js';
 import { db } from '../lib/db.js';
-import { logger } from '../lib/logger.js';
 import { extractBearerToken } from '../utils/bearer.js';
 import { forbidden, internal, unauthorized } from '../utils/http-error.js';
 
@@ -29,8 +28,7 @@ export const requireUser: MiddlewareHandler<AppEnv> = async (c, next) => {
 	try {
 		session = await auth().api.getSession({ headers: c.req.raw.headers });
 	} catch (err) {
-		logger.error({ err, requestId: c.get('requestId') }, 'session validation failed');
-		throw internal('Session validation failed');
+		throw internal('Session validation failed', undefined, err);
 	}
 	if (!session) {
 		if (extractBearerToken(c.req.header('authorization'))) {
