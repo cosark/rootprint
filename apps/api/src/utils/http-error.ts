@@ -7,9 +7,10 @@ export class HttpError extends Error {
 		public readonly code: string,
 		message: string,
 		public readonly details?: ApiErrorDetail[],
-		public readonly retryAfter?: number | string
+		public readonly retryAfter?: number | string,
+		options?: ErrorOptions
 	) {
-		super(message);
+		super(message, options);
 		this.name = 'HttpError';
 	}
 }
@@ -39,7 +40,8 @@ export const tooManyRequests = (
 	code = 'TOO_MANY_REQUESTS',
 	retryAfter?: number | string
 ) => new HttpError(429, code, message, undefined, retryAfter);
-export const internal = (message: string, code = 'INTERNAL') => new HttpError(500, code, message);
+export const internal = (message: string, code = 'INTERNAL', cause?: unknown) =>
+	new HttpError(500, code, message, undefined, undefined, { cause });
 
 const UPSTREAM_RETRY_AFTER_SECONDS = 5;
 
@@ -50,8 +52,9 @@ const UPSTREAM_RETRY_AFTER_SECONDS = 5;
 export const serviceUnavailable = (
 	message: string,
 	code = 'SERVICE_UNAVAILABLE',
-	retryAfter: number | string = UPSTREAM_RETRY_AFTER_SECONDS
-) => new HttpError(503, code, message, undefined, retryAfter);
+	retryAfter: number | string = UPSTREAM_RETRY_AFTER_SECONDS,
+	cause?: unknown
+) => new HttpError(503, code, message, undefined, retryAfter, { cause });
 
 export function isUniqueViolation(err: unknown): boolean {
 	if (typeof err !== 'object' || err === null) return false;

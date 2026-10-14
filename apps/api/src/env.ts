@@ -8,6 +8,8 @@ export type AppEnv = {
 		session?: RequestSession;
 		apiKey?: VerifiedApiKey;
 		apiKeyActor?: { keyId: string };
+		/** Extra attributes for this request's log line; written through `addLogAttrs`. */
+		logAttrs?: Record<string, unknown>;
 	};
 };
 

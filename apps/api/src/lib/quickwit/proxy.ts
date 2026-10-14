@@ -41,6 +41,9 @@ function parseContentLength(header: string | undefined): number | null {
 	return n;
 }
 
+const upstreamUnavailable = (cause: unknown) =>
+	serviceUnavailable('Upstream unavailable', 'UPSTREAM_UNAVAILABLE', undefined, cause);
+
 export async function proxyToQuickwit(c: Context, opts: ProxyOpts): Promise<ProxyResult> {
 	const reqBody = c.req.raw.body;
 	if (!reqBody) throw badRequest('Request body is required', 'EMPTY_BODY');
@@ -59,20 +62,26 @@ export async function proxyToQuickwit(c: Context, opts: ProxyOpts): Promise<Prox
 			duplex: 'half',
 			signal: AbortSignal.timeout(config.ingestProxyTimeoutMs)
 		} as RequestInit);
-	} catch {
-		throw serviceUnavailable('Upstream unavailable', 'UPSTREAM_UNAVAILABLE');
+	} catch (err) {
+		throw upstreamUnavailable(err);
 	}
 
 	if (upstream.status >= 500) {
-		await upstream.body?.cancel().catch(() => {});
-		throw serviceUnavailable('Upstream unavailable', 'UPSTREAM_UNAVAILABLE');
+		// Quickwit answers some client faults (an empty OTLP request) with 500; its message says which.
+		const detail = await upstream.arrayBuffer().then(
+			(bytes) => readUpstreamMessage(bytes, ''),
+			() => ''
+		);
+		throw upstreamUnavailable(
+			new Error(`Quickwit returned HTTP ${upstream.status}${detail ? `: ${detail}` : ''}`)
+		);
 	}
 	// The timeout signal stays armed while the body streams, so an abort here must still read as 503.
 	let bodyBytes: ArrayBuffer;
 	try {
 		bodyBytes = await upstream.arrayBuffer();
-	} catch {
-		throw serviceUnavailable('Upstream unavailable', 'UPSTREAM_UNAVAILABLE');
+	} catch (err) {
+		throw upstreamUnavailable(err);
 	}
 	return { status: upstream.status, headers: upstream.headers, bodyBytes };
 }

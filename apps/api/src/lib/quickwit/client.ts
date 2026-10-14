@@ -22,13 +22,13 @@ function isPermanentProbeStatus(status: number | undefined): boolean {
 	return status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429;
 }
 
-export async function probeQuickwit(): Promise<void> {
+/** Resolves to the Quickwit version. */
+export async function probeQuickwit(): Promise<string | undefined> {
 	const url = quickwitUrl(VERSION_PATH);
 	let lastError: unknown;
 	for (let attempt = 1; attempt <= PROBE_RETRY; attempt++) {
 		try {
-			await quickwit.getVersion({ timeout: PROBE_TIMEOUT_MS });
-			return;
+			return (await quickwit.getVersion({ timeout: PROBE_TIMEOUT_MS })).build?.version;
 		} catch (err) {
 			if (err instanceof QuickwitError && isPermanentProbeStatus(err.status)) {
 				throw new Error(

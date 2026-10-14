@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 import { generateSpecs } from 'hono-openapi';
 import type { GenerateSpecOptions } from 'hono-openapi';
 import type { Env, Hono } from 'hono';
@@ -9,18 +6,13 @@ import type { Schema } from 'hono/types';
 import { authOpenAPISchema } from '../auth.js';
 import { decorateAuthPaths } from './auth-descriptions.js';
 import { errorResponseComponents } from './errors.js';
-
-function rootVersion(): string {
-	const here = path.dirname(fileURLToPath(import.meta.url));
-	const pkgPath = path.resolve(here, '../../../../../package.json');
-	return JSON.parse(readFileSync(pkgPath, 'utf8')).version as string;
-}
+import { APP_VERSION } from '../../utils/version.js';
 
 const documentation: GenerateSpecOptions['documentation'] = {
 	openapi: '3.1.0',
 	info: {
 		title: 'Rootprint API',
-		version: rootVersion(),
+		version: APP_VERSION,
 		description: 'HTTP API for the Rootprint log management platform.'
 	},
 	servers: [{ url: 'https://example.com', description: 'Rootprint API' }],

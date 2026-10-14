@@ -4,6 +4,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApplyGlobalResponse } from 'hono/client';
 import { cors } from 'hono/cors';
 import { compress } from 'hono/compress';
+import { contextStorage } from 'hono/context-storage';
 import { serveStatic } from 'hono/bun';
 import { HTTPException } from 'hono/http-exception';
 import { requestId as requestIdMiddleware } from 'hono/request-id';
@@ -18,7 +19,7 @@ import { initAuth } from './lib/auth.js';
 import { connectDb, db, runMigrations } from './lib/db.js';
 import { logger } from './lib/logger.js';
 import { probeQuickwit, quickwit } from './lib/quickwit/client.js';
-import { isApiPath, requestLogging } from './middleware/request-logging.js';
+import { addLogAttrs, isApiPath, requestLogging } from './middleware/request-logging.js';
 import { requireUser } from './middleware/require-user.js';
 import { adminActivityRouter } from './routes/admin/activity.js';
 import { clusterRouter } from './routes/admin/cluster.js';
@@ -57,6 +58,7 @@ function errorJson(c: Context, body: ApiErrorBody['error'], status: ContentfulSt
 
 export const app = new Hono<AppEnv>();
 
+app.use('*', contextStorage());
 app.use('*', requestIdMiddleware());
 app.use('*', secureHeaders({ strictTransportSecurity: false }));
 app.use('*', requestLogging);
@@ -86,54 +88,38 @@ app.onError((rawErr, c) => {
 				: new HttpError(rawErr.status, 'HTTP_ERROR', message);
 	}
 
-	const logMeta =
-		err instanceof HttpError
-			? { requestId, path: c.req.path, statusCode: err.statusCode, code: err.code, err }
-			: {
-					requestId,
-					path: c.req.path,
-					name: err.name,
-					code: String((err as { code?: unknown }).code),
-					err
-				};
+	// A fault is an error whose message clients never see; it logs with its stack. A transient
+	// error (retryAfter) is client-safe and logs its cause's message instead.
+	const fault = !(err instanceof HttpError) || !isPublicError(err);
+	const cause = err.cause instanceof Error ? err.cause.message : undefined;
+	addLogAttrs(c, {
+		'error.type': err instanceof HttpError ? err.code : 'INTERNAL',
+		...(fault ? { err: rawErr } : {}),
+		...(!fault && cause ? { 'error.message': cause } : {})
+	});
 
 	if (c.req.path.startsWith('/v1/')) {
-		if (err instanceof HttpError) {
-			logger[err.retryAfter == null && err.statusCode >= 500 ? 'error' : 'warn'](
-				logMeta,
-				'request failed'
-			);
-			return otlpErrorFromHttpError(err);
-		}
-		logger.error(logMeta, 'request failed');
-		return otlpError(503, Code.UNAVAILABLE, 'Upstream unavailable', 5);
+		return err instanceof HttpError
+			? otlpErrorFromHttpError(err)
+			: otlpError(503, Code.UNAVAILABLE, 'Upstream unavailable', 5);
 	}
 
 	if (err instanceof HttpError) {
-		const isServerError = err.statusCode >= 500;
-		// retryAfter marks a client-safe transient error: keep its message, warn-log, advertise Retry-After. Genuine faults stay masked + error-logged.
-		const isTransient = err.retryAfter != null;
-		if (isTransient) {
-			logger.warn(logMeta, 'request failed');
-			c.header('Retry-After', String(err.retryAfter));
-		} else if (isServerError) {
-			logger.error(logMeta, 'request failed');
-		}
-		const maskMessage = !isPublicError(err);
+		// retryAfter marks a client-safe transient error: keep its message and advertise Retry-After.
+		if (err.retryAfter != null) c.header('Retry-After', String(err.retryAfter));
 		return errorJson(
 			c,
 			{
 				code: err.code,
-				message: maskMessage ? 'Internal server error' : err.message,
+				message: fault ? 'Internal server error' : err.message,
 				statusCode: err.statusCode,
 				requestId,
-				...(!maskMessage && err.details ? { details: err.details } : {})
+				...(!fault && err.details ? { details: err.details } : {})
 			},
 			err.statusCode as ContentfulStatusCode
 		);
 	}
 
-	logger.error(logMeta, 'request failed');
 	return errorJson(
 		c,
 		{ code: 'INTERNAL', message: 'Internal server error', statusCode: 500, requestId },
@@ -142,6 +128,7 @@ app.onError((rawErr, c) => {
 });
 
 app.notFound((c) => {
+	addLogAttrs(c, { 'error.type': 'ROUTE_NOT_FOUND' });
 	if (c.req.path.startsWith('/v1/')) {
 		return otlpError(404, Code.NOT_FOUND, 'Route not found');
 	}
@@ -201,18 +188,22 @@ app.use('*', serveStatic({ root: webRoot }));
 // SPA fallback: anything still unmatched gets index.html.
 app.get('*', serveStatic({ path: 'index.html', root: webRoot }));
 
-/** Everything before the listener: DB, migrations, secret, Quickwit probe, Better Auth. */
-export async function boot(): Promise<void> {
+/**
+ * Everything before the listener: DB, migrations, secret, Quickwit probe, Better Auth. Resolves to
+ * the Quickwit version.
+ */
+export async function boot(): Promise<string | undefined> {
 	await connectDb();
 	await runMigrations();
 	const secret = await getBetterAuthSecret(db);
-	await probeQuickwit();
+	const quickwitVersion = await probeQuickwit();
 	await initAuth(secret);
+	return quickwitVersion;
 }
 
 async function main(): Promise<void> {
 	logger.info('booting api');
-	await boot();
+	const quickwitVersion = await boot();
 
 	startStatsCollector(db, quickwit);
 
@@ -222,15 +213,22 @@ async function main(): Promise<void> {
 		port: config.port,
 		idleTimeout: 255
 	});
-	logger.info({ port: config.port }, 'api listening');
-
-	const shutdown = () => {
-		logger.info('shutting down api');
+	const shutdown = (signal: NodeJS.Signals) => {
+		logger.info({ signal }, 'shutting down api');
 		server.stop(true);
 		process.exit(0);
 	};
 	process.on('SIGTERM', shutdown);
 	process.on('SIGINT', shutdown);
+
+	logger.info(
+		{
+			'server.port': config.port,
+			'rootprint.trace_index.id': config.traceIndexId,
+			...(quickwitVersion ? { 'rootprint.quickwit.version': quickwitVersion } : {})
+		},
+		'api listening'
+	);
 }
 
 if (import.meta.main) {

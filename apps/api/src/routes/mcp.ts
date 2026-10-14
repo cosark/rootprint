@@ -39,8 +39,7 @@ export const mcpRouter = new Hono<AuthedEnv>()
 		}
 		const server = buildMcpServer({
 			userId: c.get('session').user.id,
-			apiKeyId: c.get('apiKeyActor')?.keyId,
-			requestId: c.get('requestId')
+			apiKeyId: c.get('apiKeyActor')?.keyId
 		});
 		const transport = new WebStandardStreamableHTTPServerTransport({
 			sessionIdGenerator: undefined,

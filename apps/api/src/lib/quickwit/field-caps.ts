@@ -55,7 +55,10 @@ export async function fetchFieldCaps(
 
 		return [...byName.values()];
 	} catch (err) {
-		logger.warn({ err, indexId, url }, 'field caps failed — falling back to schema');
+		logger.warn(
+			{ err, 'rootprint.index.id': indexId, 'url.full': url },
+			'field caps failed — falling back to schema'
+		);
 		return null;
 	}
 }

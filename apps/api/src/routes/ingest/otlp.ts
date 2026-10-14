@@ -8,8 +8,9 @@ import { describe } from '../../lib/openapi/describe.js';
 import { quickwitUrl } from '../../lib/quickwit/client.js';
 import { proxyToQuickwit, readUpstreamMessage } from '../../lib/quickwit/proxy.js';
 import { requireIngestKey } from '../../middleware/require-api-key.js';
+import { addLogAttrs } from '../../middleware/request-logging.js';
 import { badRequest, HttpError, unsupportedMediaType } from '../../utils/http-error.js';
-import { otlpSuccess } from '../../utils/otlp-response.js';
+import { otlpSuccess, readPartialSuccess } from '../../utils/otlp-response.js';
 
 type Signal = 'logs' | 'traces';
 
@@ -120,19 +121,21 @@ function signalHandler(signal: Signal): Handler<KeyedEnv> {
 	const indexHeader = `qw-otel-${signal}-index`;
 
 	return async (c) => {
+		const apiKey = c.get('apiKey');
+		const destinationIndex = signal === 'traces' ? config.traceIndexId : apiKey.indexId;
+		addLogAttrs(c, { 'rootprint.index.id': destinationIndex });
+
 		const baseType = parseBaseMediaType(c.req.header('content-type'));
 		if (baseType !== CONTENT_TYPE_PROTOBUF) {
 			throw unsupportedMediaType(unsupportedMessage, 'CONTENT_TYPE_UNSUPPORTED');
 		}
 
-		const apiKey = c.get('apiKey');
 		if (signal !== 'traces' && apiKey.indexId === config.traceIndexId) {
 			throw badRequest(
 				'This key targets the span store. Send spans to POST /v1/traces instead.',
 				'INDEX_IS_TRACE_INDEX'
 			);
 		}
-		const destinationIndex = signal === 'traces' ? config.traceIndexId : apiKey.indexId;
 		const upstreamUrl = quickwitUrl(`/api/v1/otlp/v1/${signal}`);
 		const headers: Record<string, string> = {
 			'content-type': CONTENT_TYPE_PROTOBUF,
@@ -156,7 +159,16 @@ function signalHandler(signal: Signal): Handler<KeyedEnv> {
 			);
 		}
 
-		return otlpSuccess(signal, result.bodyBytes);
+		const partialSuccess = readPartialSuccess(signal, result.bodyBytes);
+		if (partialSuccess) {
+			addLogAttrs(c, {
+				'rootprint.ingest.rejected': Number(partialSuccess.rejectedLogRecords),
+				...(partialSuccess.errorMessage
+					? { 'rootprint.ingest.error': partialSuccess.errorMessage }
+					: {})
+			});
+		}
+		return otlpSuccess(partialSuccess);
 	};
 }
 

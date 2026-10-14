@@ -18,10 +18,12 @@ function toCount(v: unknown): number {
 	return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
 
-function readPartialSuccess(
+export type PartialSuccess = { rejectedLogRecords: bigint; errorMessage: string };
+
+export function readPartialSuccess(
 	signal: 'logs' | 'traces',
 	bodyBytes: ArrayBuffer
-): { rejectedLogRecords: bigint; errorMessage: string } | null {
+): PartialSuccess | null {
 	const text = new TextDecoder().decode(bodyBytes).trim();
 	if (!text) return null;
 
@@ -54,8 +56,7 @@ function readPartialSuccess(
  * carrying over its rejected-record count. One schema covers both signals: ExportLogsServiceResponse
  * and ExportTraceServiceResponse have identical wire shapes.
  */
-export function otlpSuccess(signal: 'logs' | 'traces', bodyBytes: ArrayBuffer): Response {
-	const partialSuccess = readPartialSuccess(signal, bodyBytes);
+export function otlpSuccess(partialSuccess: PartialSuccess | null): Response {
 	const body = toBinary(
 		ExportLogsServiceResponseSchema,
 		create(ExportLogsServiceResponseSchema, partialSuccess ? { partialSuccess } : {})

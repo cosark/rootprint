@@ -199,7 +199,7 @@ async function loadReachableAuthConfig(): Promise<AuthConfig> {
 		return { ...cfg, oidcTokenAuth: tokenAuth };
 	} catch (err) {
 		logger.warn(
-			{ err, issuerUrl: cfg.oidc.issuerUrl, retryInMs: OIDC_RETRY_MS },
+			{ err, 'url.full': cfg.oidc.issuerUrl, 'rootprint.oidc.retry_ms': OIDC_RETRY_MS },
 			'oidc discovery unreachable; provider disabled until the retry succeeds'
 		);
 		scheduleOidcRetry();
@@ -217,7 +217,7 @@ async function buildReadyAuth(secret: string, cfg: AuthConfig) {
 	const ctx = await instance.$context;
 	if (cfg.oidc && !ctx.socialProviders.some((p) => p.id === 'oidc')) {
 		logger.warn(
-			{ issuerUrl: cfg.oidc.issuerUrl, retryInMs: OIDC_RETRY_MS },
+			{ 'url.full': cfg.oidc.issuerUrl, 'rootprint.oidc.retry_ms': OIDC_RETRY_MS },
 			'oidc provider skipped by better-auth init; disabled until the retry succeeds'
 		);
 		scheduleOidcRetry();

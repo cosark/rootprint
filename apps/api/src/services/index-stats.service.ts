@@ -50,7 +50,10 @@ async function captureSnapshots(
 			} else {
 				failed += 1;
 				const code = err instanceof QuickwitError ? err.code : 'UNKNOWN';
-				logger.warn({ err, indexId, code }, 'index stats describe failed');
+				logger.warn(
+					{ err, 'rootprint.index.id': indexId, 'error.type': code },
+					'index stats describe failed'
+				);
 			}
 		}
 	}
@@ -65,20 +68,30 @@ async function captureSnapshots(
 
 export function startStatsCollector(db: Db, qw: QuickwitClient): void {
 	const tick = async () => {
+		const startedAt = performance.now();
 		const [snapshots, retention] = await Promise.allSettled([
 			captureSnapshots(db, qw),
 			pruneSearchAudit(db, config.searchAuditRetentionDays)
 		]);
-		if (snapshots.status === 'fulfilled') {
-			if (snapshots.value.failed > 0) {
-				logger.warn(snapshots.value, 'index stats snapshot partially failed');
-			}
-		} else {
+		if (snapshots.status === 'rejected') {
 			logger.warn({ err: snapshots.reason }, 'index stats snapshot failed');
 		}
 		if (retention.status === 'rejected') {
 			logger.warn({ err: retention.reason }, 'search audit retention failed');
 		}
+		const stats = snapshots.status === 'fulfilled' ? snapshots.value : undefined;
+		logger[stats?.failed ? 'warn' : 'info'](
+			{
+				...(stats
+					? { 'rootprint.stats.captured': stats.captured, 'rootprint.stats.failed': stats.failed }
+					: {}),
+				...(retention.status === 'fulfilled'
+					? { 'rootprint.search_audit.pruned': retention.value }
+					: {}),
+				duration_ms: Math.round(performance.now() - startedAt)
+			},
+			'stats collected'
+		);
 		setTimeout(() => void tick(), INDEX_STATS_INTERVAL_MS);
 	};
 
