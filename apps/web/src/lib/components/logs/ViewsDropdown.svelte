@@ -129,7 +129,6 @@
 		}
 
 		const name = formName.trim();
-		let save: () => Promise<void>;
 		if (editing) {
 			const editingView = editing;
 			const patch = { name };
@@ -138,10 +137,10 @@
 				fieldErrors = issuesToFieldErrors(parsed.issues);
 				return;
 			}
-			save = async () => {
+			await submit(async () => {
 				const row = await updateView(indexId, editingView.id, patch);
 				items = items.map((it) => (it.id === row.id ? row : it));
-			};
+			});
 		} else {
 			const input = { name, ...currentSnapshot({ withTime: saveTime, withColumns: true }) };
 			const parsed = v.safeParse(createViewSchema, input);
@@ -149,13 +148,15 @@
 				fieldErrors = issuesToFieldErrors(parsed.issues);
 				return;
 			}
-			save = async () => {
+			await submit(async () => {
 				const row = await createView(indexId, input);
 				items = [row, ...items];
 				appliedId = row.id;
-			};
+			});
 		}
+	}
 
+	async function submit(save: () => Promise<void>) {
 		formSubmitting = true;
 		try {
 			await save();

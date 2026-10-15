@@ -8,7 +8,8 @@
 		fetchExploreSpans,
 		queryErrorOf,
 		type ExploreFilters,
-		type ExploreSpanRow
+		type ExploreSpanRow,
+		type ExploreSpans
 	} from '#lib/api/traces.js';
 	import { rowActivate } from '#lib/attachments/row-activate.js';
 	import CopyButton from '#lib/components/ui/CopyButton.svelte';
@@ -53,6 +54,21 @@
 		return traceDetailHref(row.traceId, { index: logIndex, span: row.spanId, returnTo: page.url });
 	}
 
+	// Callers must pass the request guard first. A page-0 response replaces the list in one
+	// assignment so a new filter's rows never mix with the previous filter's.
+	function applyPage(result: ExploreSpans, pageOffset: number) {
+		if (pageOffset === 0) seenKeys = new Set<string>();
+		const fresh = result.rows.filter((row) => {
+			const key = row.traceId + row.spanId;
+			if (seenKeys.has(key)) return false;
+			seenKeys.add(key);
+			return true;
+		});
+		rows = pageOffset === 0 ? fresh : [...rows, ...fresh];
+		if (result.total !== null) total = result.total;
+		offset = pageOffset + EXPLORE_PAGE_SIZE;
+	}
+
 	async function fetchPage(pageOffset: number, filtersAndSort = request) {
 		const token = guard.next();
 		failure = null;
@@ -67,18 +83,7 @@
 				signal: controller.signal
 			});
 			if (!guard.isCurrent(token)) return;
-			// A page-0 response replaces the list atomically (one assignment, still behind the guard
-			// check above) so a new filter's rows never mix with the previous filter's.
-			if (pageOffset === 0) seenKeys = new Set<string>();
-			const fresh = result.rows.filter((row) => {
-				const key = row.traceId + row.spanId;
-				if (seenKeys.has(key)) return false;
-				seenKeys.add(key);
-				return true;
-			});
-			rows = pageOffset === 0 ? fresh : [...rows, ...fresh];
-			if (result.total !== null) total = result.total;
-			offset = pageOffset + EXPLORE_PAGE_SIZE;
+			applyPage(result, pageOffset);
 		} catch (error) {
 			if (!guard.isCurrent(token)) return;
 			failure = error;

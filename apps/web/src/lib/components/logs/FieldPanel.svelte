@@ -113,23 +113,25 @@
 		return `${id}|${store.query}|${serializeTimeRange(store.timeRange)}|${filtersKey}|${openKey}|${store.refreshRevision}`;
 	});
 
+	function pruneStale(desiredKeys: Map<string, string>) {
+		for (const [f, entry] of valuesByField) {
+			if (entry.key !== desiredKeys.get(f)) valuesByField.delete(f);
+		}
+		// An open field's spinner outlives this run: only the fetch that set it may clear it.
+		for (const f of loadingFields) {
+			if (!desiredKeys.has(f)) loadingFields.delete(f);
+		}
+		// Every errored field lacks fresh values, so it is always pending and retried.
+		errorByField.clear();
+	}
+
 	function runOrchestrator(signal: AbortSignal) {
 		const id = store.selectedIndex;
 		if (!id || !store.fieldsReady) return;
 
 		const openList = eligibleOpen;
-		const open = new Set(openList);
 		const desiredKeys = new Map(openList.map((f) => [f, fieldCacheKey(id, f)]));
-
-		for (const [f, entry] of valuesByField) {
-			if (!open.has(f) || entry.key !== desiredKeys.get(f)) valuesByField.delete(f);
-		}
-		// An open field's spinner outlives this run: only the fetch that set it may clear it.
-		for (const f of loadingFields) {
-			if (!open.has(f)) loadingFields.delete(f);
-		}
-		// Every errored field lacks fresh values, so it is always pending below and retried.
-		errorByField.clear();
+		pruneStale(desiredKeys);
 
 		const pending = openList.filter((f) => !valuesByField.has(f));
 		if (pending.length === 0) return;
