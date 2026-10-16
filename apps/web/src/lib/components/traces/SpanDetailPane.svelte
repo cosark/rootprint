@@ -52,19 +52,6 @@
 		if (spanId) scrollEl?.scrollTo(0, 0);
 	});
 
-	function handleTabKeydown(e: KeyboardEvent): void {
-		if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-		e.preventDefault();
-		const order = TABS.map((t) => t.id).filter((id) => !isDisabled(id));
-		const idx = order.indexOf(activeTab);
-		const next =
-			e.key === 'ArrowRight'
-				? order[(idx + 1) % order.length]
-				: order[(idx - 1 + order.length) % order.length];
-		activeTab = next;
-		document.getElementById(`span-tab-${next}`)?.focus();
-	}
-
 	const formatOffset = (micros: number): string =>
 		`${micros < 0 ? '-' : '+'}${formatDurationMicros(Math.abs(micros))}`;
 
@@ -195,8 +182,6 @@
 		class="border-line flex min-w-0 overflow-x-auto border-b px-1"
 		role="tablist"
 		aria-label="Span detail tabs"
-		tabindex={-1}
-		onkeydown={handleTabKeydown}
 	>
 		{#each TABS as tab (tab.id)}
 			<button
@@ -205,7 +190,6 @@
 				id={`span-tab-${tab.id}`}
 				aria-selected={activeTab === tab.id}
 				aria-controls="span-detail-panel"
-				tabindex={activeTab === tab.id ? 0 : -1}
 				aria-disabled={isDisabled(tab.id)}
 				class={[
 					'tab-underline shrink-0 px-3 py-2.5 text-xs transition-colors',

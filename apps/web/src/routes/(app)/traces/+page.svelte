@@ -109,14 +109,6 @@
 			params.set('tab', 'spans');
 		});
 	}
-
-	function onTabKeydown(event: KeyboardEvent) {
-		if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-		event.preventDefault();
-		const next: Tab = tab === 'operations' ? 'spans' : 'operations';
-		setTab(next);
-		document.getElementById(`${tabsetId}-${next}`)?.focus();
-	}
 </script>
 
 <div class="flex min-h-0 w-full flex-1 flex-col">
@@ -157,8 +149,6 @@
 			class="border-b-line flex min-w-0 border-b not-first:-mt-4"
 			role="tablist"
 			aria-label="Trace views"
-			tabindex={-1}
-			onkeydown={onTabKeydown}
 		>
 			{#each TABS as t (t.id)}
 				<button
@@ -167,7 +157,6 @@
 					id={`${tabsetId}-${t.id}`}
 					aria-controls={panelId}
 					aria-selected={tab === t.id}
-					tabindex={tab === t.id ? 0 : -1}
 					class="tab-underline h-9 shrink-0 px-3 text-xs"
 					onclick={() => setTab(t.id)}
 				>

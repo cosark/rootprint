@@ -105,7 +105,15 @@
 		{/each}
 	</div>
 
-	<div class="flex w-72 flex-col p-3">
+	<!-- novalidate: parseLocalDateTime accepts 9:30, which the HH:MM pattern would block. -->
+	<form
+		class="flex w-72 flex-col p-3"
+		novalidate
+		onsubmit={(e) => {
+			e.preventDefault();
+			apply();
+		}}
+	>
 		<p class="section-label mb-2">Absolute range</p>
 
 		<p class="text-muted mb-1 text-xs">From</p>
@@ -116,9 +124,6 @@
 				aria-describedby="time-range-error"
 				aria-label="From date"
 				bind:value={dateStart}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') apply();
-				}}
 			/>
 			<input
 				type="text"
@@ -130,9 +135,6 @@
 				aria-describedby="time-range-error"
 				aria-label="From time"
 				bind:value={timeStart}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') apply();
-				}}
 			/>
 		</div>
 
@@ -144,9 +146,6 @@
 				aria-describedby="time-range-error"
 				aria-label="To date"
 				bind:value={dateEnd}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') apply();
-				}}
 			/>
 			<input
 				type="text"
@@ -158,9 +157,6 @@
 				aria-describedby="time-range-error"
 				aria-label="To time"
 				bind:value={timeEnd}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') apply();
-				}}
 			/>
 		</div>
 
@@ -170,9 +166,7 @@
 
 		<div class="mt-auto flex justify-end gap-2 pt-3">
 			<button type="button" class="btn btn-ghost btn-sm" onclick={close}>Cancel</button>
-			<button type="button" class="btn btn-primary btn-sm" disabled={!isValid} onclick={apply}>
-				Apply
-			</button>
+			<button type="submit" class="btn btn-primary btn-sm" disabled={!isValid}>Apply</button>
 		</div>
-	</div>
+	</form>
 </div>
