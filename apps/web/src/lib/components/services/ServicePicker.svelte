@@ -13,12 +13,10 @@
 	} = $props();
 
 	const dd = $props.id();
-	const listboxId = `${dd}-listbox`;
 	let panelEl = $state<HTMLDivElement | null>(null);
 	let searchEl = $state<HTMLInputElement | null>(null);
 	let query = $state('');
 	let open = $state(false);
-	let activeIndex = $state(0);
 
 	const options = $derived.by(() => {
 		const names = value !== null && !services.includes(value) ? [value, ...services] : services;
@@ -44,39 +42,14 @@
 		onChange(next);
 	}
 
-	function focusActive() {
-		void tick().then(() => {
-			document.getElementById(`${dd}-option-${activeIndex}`)?.scrollIntoView({ block: 'nearest' });
-		});
-	}
-
-	function moveActive(direction: number) {
-		if (filtered.length === 0) return;
-		activeIndex = (activeIndex + direction + filtered.length) % filtered.length;
-		focusActive();
-	}
-
 	function onKeydown(event: KeyboardEvent) {
-		if (event.key === 'ArrowDown') {
-			event.preventDefault();
-			moveActive(1);
-		} else if (event.key === 'ArrowUp') {
-			event.preventDefault();
-			moveActive(-1);
-		} else if (event.key === 'Enter' && filtered[activeIndex]) {
-			event.preventDefault();
-			choose(filtered[activeIndex].value);
-		}
+		if (event.key === 'Enter' && query.trim() !== '' && filtered[0]) choose(filtered[0].value);
 	}
 
 	function onToggle(event: Event) {
 		open = (event as ToggleEvent).newState === 'open';
 		if (!open) return;
 		query = '';
-		activeIndex = Math.max(
-			0,
-			options.findIndex((option) => option.value === (value ?? ''))
-		);
 		void tick().then(() => searchEl?.focus());
 	}
 </script>
@@ -112,30 +85,22 @@
 				bind:this={searchEl}
 				bind:value={query}
 				type="search"
-				role="combobox"
 				placeholder="Search services…"
 				aria-label="Search services"
-				aria-expanded="true"
-				aria-controls={listboxId}
-				aria-activedescendant={filtered[activeIndex] ? `${dd}-option-${activeIndex}` : undefined}
-				oninput={() => (activeIndex = 0)}
 				onkeydown={onKeydown}
 			/>
 		</label>
 	</div>
-	<div id={listboxId} role="listbox" aria-label="Services" class="max-h-64 overflow-y-auto py-1">
+	<div role="listbox" aria-label="Services" class="max-h-64 overflow-y-auto py-1">
 		{#if filtered.length === 0}
 			<p class="text-subtle px-3 py-6 text-center text-xs">No matching services.</p>
 		{:else}
-			{#each filtered as option, index (option.value)}
+			{#each filtered as option (option.value)}
 				<button
-					id={`${dd}-option-${index}`}
 					type="button"
 					role="option"
 					aria-selected={option.value === (value ?? '')}
 					class="hover:bg-base-200 flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-xs"
-					class:bg-base-200={index === activeIndex}
-					onmousemove={() => (activeIndex = index)}
 					onclick={() => choose(option.value)}
 				>
 					<span class="truncate">{option.label}</span>

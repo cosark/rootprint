@@ -91,27 +91,6 @@
 			params.delete('httpStatus');
 		}, true);
 	}
-
-	function handleTabKeydown(event: KeyboardEvent) {
-		if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-		const tablist = event.currentTarget as HTMLElement;
-		const buttons = Array.from(tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-		const current = (event.target as HTMLElement).closest<HTMLButtonElement>('[role="tab"]');
-		const index = current === null ? -1 : buttons.indexOf(current);
-		if (index < 0) return;
-		event.preventDefault();
-		const nextIndex =
-			event.key === 'Home'
-				? 0
-				: event.key === 'End'
-					? buttons.length - 1
-					: event.key === 'ArrowRight'
-						? (index + 1) % buttons.length
-						: (index - 1 + buttons.length) % buttons.length;
-		const next = buttons[nextIndex];
-		setTab(next.dataset.tab as Tab);
-		next.focus();
-	}
 </script>
 
 {#snippet toolbar(serviceNames: string[])}
@@ -170,18 +149,14 @@
 						class="border-b-line flex min-w-0 overflow-x-auto border-b"
 						role="tablist"
 						aria-label="Service details"
-						tabindex={-1}
-						onkeydown={handleTabKeydown}
 					>
 						{#each TABS as t (t.id)}
 							<button
 								type="button"
 								role="tab"
 								id={`${tabsetId}-${t.id}`}
-								data-tab={t.id}
 								aria-controls={panelId}
 								aria-selected={tab === t.id}
-								tabindex={tab === t.id ? 0 : -1}
 								class="tab-underline h-9 shrink-0 px-3 text-xs"
 								onclick={() => setTab(t.id)}
 							>
