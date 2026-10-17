@@ -24,6 +24,10 @@
 
 	let { data } = $props();
 
+	// Returning cancel makes it the teardown: the health request stops when new data replaces it
+	// or the page closes.
+	$effect(() => data.cancel);
+
 	// One cursor group: hovering or brushing any panel drives all of them.
 	const SYNC_KEY = 'service-health';
 
