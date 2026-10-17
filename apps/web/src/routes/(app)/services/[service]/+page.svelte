@@ -99,13 +99,21 @@
 
 {#snippet toolbar(serviceNames: string[])}
 	<PageToolbar>
-		<a class="btn btn-ghost btn-sm" href={servicesHref(page.url, null)}>
+		<a
+			class="btn btn-ghost btn-sm"
+			href={servicesHref(page.url, null)}
+			data-sveltekit-preload-data="tap"
+		>
 			<ArrowLeft class="size-3.5" aria-hidden="true" />Services
 		</a>
 		<ServicePicker services={serviceNames} value={data.service} onChange={switchService} />
 		<div class="ml-auto flex items-center gap-2">
 			<TimeRangePicker value={data.timeRange} onChange={setRange} />
-			<a class="btn btn-ghost btn-sm" href={exploreHref(page.url, { service: data.service })}>
+			<a
+				class="btn btn-ghost btn-sm"
+				href={exploreHref(page.url, { service: data.service })}
+				data-sveltekit-preload-data="tap"
+			>
 				<ChartNoAxesGantt class="size-3.5" aria-hidden="true" />View traces
 			</a>
 		</div>
