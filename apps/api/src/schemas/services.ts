@@ -9,7 +9,6 @@ import {
 } from '../constants.js';
 import { EPOCH_SECONDS, intParam } from '../utils/valibot.js';
 
-export const MAX_RANGE_SECONDS = 30 * 24 * 60 * 60;
 export const MAX_BUCKETS = 2_000;
 const MAX_ENDPOINT_LIMIT = 100;
 
@@ -43,10 +42,6 @@ export const ServiceHealthQuery = v.pipe(
 	}),
 	v.check((input) => input.startTs < input.endTs, 'startTs must be before endTs'),
 	v.check(
-		(input) => input.endTs - input.startTs <= MAX_RANGE_SECONDS,
-		'Range cannot exceed 30 days'
-	),
-	v.check(
 		(input) => (input.endTs - input.startTs) / intervalSeconds(input.interval) <= MAX_BUCKETS,
 		'interval produces too many buckets'
 	)
@@ -68,11 +63,7 @@ export const ServiceErrorsQuery = v.pipe(
 		),
 		offset: v.optional(intParam({ min: 0, max: MAX_ERROR_OFFSET, label: 'offset' }), '0')
 	}),
-	v.check((input) => input.startTs < input.endTs, 'startTs must be before endTs'),
-	v.check(
-		(input) => input.endTs - input.startTs <= MAX_RANGE_SECONDS,
-		'Range cannot exceed 30 days'
-	)
+	v.check((input) => input.startTs < input.endTs, 'startTs must be before endTs')
 );
 
 export type ServiceErrorsInput = v.InferOutput<typeof ServiceErrorsQuery>;

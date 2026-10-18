@@ -1,4 +1,4 @@
-import { format, formatDistanceToNow, getUnixTime, isValid, parse, parseISO } from 'date-fns';
+import { format, getUnixTime, isValid, parse, parseISO } from 'date-fns';
 
 import { timeZone } from '#lib/stores/time-zone.svelte.js';
 
@@ -27,12 +27,6 @@ export function formatActivityTimestamp(iso: string): string {
 	return isValid(d) ? formatInZone(d, 'yyyy-MM-dd HH:mm:ss') : '—';
 }
 
-export function formatRelativeTime(input: string | Date): string {
-	const d = typeof input === 'string' ? parseISO(input) : input;
-	if (!isValid(d)) return '—';
-	return formatDistanceToNow(d, { addSuffix: true });
-}
-
 const AGE_UNITS = [
 	['y', 365 * 86_400],
 	['mo', 30 * 86_400],
@@ -42,8 +36,10 @@ const AGE_UNITS = [
 ] as const;
 
 /** "just now", "4m ago", "in 6mo" — compact for dense tables. */
-export function formatAge(input: Date): string {
-	const seconds = (Date.now() - input.getTime()) / 1000;
+export function formatRelativeTime(input: string | Date): string {
+	const d = typeof input === 'string' ? parseISO(input) : input;
+	if (!isValid(d)) return '—';
+	const seconds = (Date.now() - d.getTime()) / 1000;
 	const abs = Math.abs(seconds);
 	const unit = AGE_UNITS.find(([, size]) => abs >= size);
 	if (!unit) return 'just now';
@@ -64,16 +60,24 @@ export function formatDateTime(input: string | Date): string {
 	return isValid(d) ? formatInZone(d, 'yyyy-MM-dd HH:mm') : '—';
 }
 
+const RANGE_TIME = /^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/;
+
+/** Accepts H:MM, HH:MM and HH:MM:SS; both zones share one grammar so switching never changes validity. */
 export function parseRangeDateTime(dateStr: string, timeStr: string): number | null {
+	const m = RANGE_TIME.exec(timeStr);
+	if (!m) return null;
+	const time = `${m[1].padStart(2, '0')}:${m[2]}:${m[3] ?? '00'}`;
 	if (timeZone.utc) {
-		const ms = Date.parse(`${dateStr}T${timeStr.padStart(5, '0')}Z`);
+		const ms = Date.parse(`${dateStr}T${time}Z`);
 		return Number.isNaN(ms) ? null : ms / 1000;
 	}
-	const d = parse(`${dateStr} ${timeStr}`, 'yyyy-MM-dd HH:mm', new Date());
+	const d = parse(`${dateStr} ${time}`, 'yyyy-MM-dd HH:mm:ss', new Date());
 	return isValid(d) ? getUnixTime(d) : null;
 }
 
-export function formatTickDate(d: Date | number, spanMs: number): string {
+/** `stepMs` is the gap between ticks: below a minute, `HH:mm` would repeat on neighbouring ticks. */
+export function formatTickDate(d: Date | number, spanMs: number, stepMs: number): string {
+	if (stepMs < 60_000) return formatInZone(d, 'HH:mm:ss');
 	const oneDay = 24 * 60 * 60 * 1000;
 	return spanMs <= oneDay ? formatInZone(d, 'HH:mm') : formatInZone(d, 'MM-dd HH:mm');
 }

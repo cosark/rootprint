@@ -1,3 +1,4 @@
+import { epochToMs } from 'api/time';
 import { getUnixTime, isValid, parseISO } from 'date-fns';
 
 import type { FieldConfig, LogHit } from '#lib/types.js';
@@ -22,9 +23,7 @@ export function hitTimestampSeconds(raw: Record<string, unknown>, fc: FieldConfi
 function coerceIso(value: unknown): string {
 	if (typeof value === 'string') return value;
 	if (typeof value === 'number') {
-		// > 1e15 is physically impossible as milliseconds-since-epoch (year 33658+),
-		// so treat values above that as nanoseconds (Quickwit's _otel_timestamp_ns_int).
-		const ms = value > 1e15 ? Math.floor(value / 1e6) : value;
+		const ms = epochToMs(value);
 		if (!Number.isFinite(ms) || Math.abs(ms) > 8.64e15) return '';
 		return new Date(ms).toISOString();
 	}

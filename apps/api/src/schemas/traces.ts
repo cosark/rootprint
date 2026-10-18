@@ -8,7 +8,7 @@ import {
 	MAX_EXPLORE_OFFSET
 } from '../constants.js';
 import { boolParam, EPOCH_SECONDS, intParam } from '../utils/valibot.js';
-import { intervalParam, intervalSeconds, MAX_BUCKETS, MAX_RANGE_SECONDS } from './services.js';
+import { intervalParam, intervalSeconds, MAX_BUCKETS } from './services.js';
 
 // Rejects the all-zeros id: OTLP writes it on logs that carry no trace context.
 const TRACE_ID_RE = /^(?!0{32}$)[0-9a-f]{32}$/;
@@ -74,10 +74,6 @@ export const ExploreSpansQuery = v.pipe(
 	}),
 	v.check((input) => input.startTs < input.endTs, 'startTs must be before endTs'),
 	v.check(
-		(input) => input.endTs - input.startTs <= MAX_RANGE_SECONDS,
-		'Trace range cannot exceed 30 days'
-	),
-	v.check(
 		(input) => input.minMs === undefined || input.maxMs === undefined || input.minMs < input.maxMs,
 		'minMs must be below maxMs'
 	)
@@ -88,10 +84,6 @@ export type ExploreFilters = Omit<ExploreSpansInput, 'sort' | 'limit' | 'offset'
 export const ExploreOverviewQuery = v.pipe(
 	v.object({ ...exploreFilterEntries, interval: intervalParam }),
 	v.check((input) => input.startTs < input.endTs, 'startTs must be before endTs'),
-	v.check(
-		(input) => input.endTs - input.startTs <= MAX_RANGE_SECONDS,
-		'Trace range cannot exceed 30 days'
-	),
 	v.check(
 		(input) => input.minMs === undefined || input.maxMs === undefined || input.minMs < input.maxMs,
 		'minMs must be below maxMs'

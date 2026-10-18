@@ -1,18 +1,19 @@
 <script lang="ts">
 	import type uPlotLib from 'uplot';
 
+	import { formatInterval } from 'api/time';
 	import { ChevronDown, ChevronRight } from 'lucide-svelte';
 
 	import UplotChart from '#lib/components/ui/uplot/UplotChart.svelte';
 	import { levelColor, UNKNOWN_LEVEL } from '#lib/constants/level-colors.js';
 	import type { HistogramBucket } from '#lib/types.js';
 	import { baseContentAt } from '#lib/utils/chart-colors.js';
-	import { formatInterval } from '#lib/utils/histogram.js';
 	import { sortBySeverity } from '#lib/components/logs/severity.js';
 	import { formatTickDate, formatTooltipDate } from '#lib/utils/time.js';
 
 	type Props = {
 		buckets: HistogramBucket[];
+		intervalSec?: number;
 		loading: boolean;
 		error: string | null;
 		collapsed: boolean;
@@ -23,6 +24,7 @@
 
 	let {
 		buckets,
+		intervalSec,
 		loading,
 		error,
 		collapsed = $bindable(false),
@@ -33,10 +35,9 @@
 
 	const HEIGHT = 150;
 
-	const bucketWidthLabel = $derived.by<string | null>(() => {
-		if (buckets.length < 2) return null;
-		return formatInterval(buckets[1].timestamp - buckets[0].timestamp);
-	});
+	const bucketWidthLabel = $derived(
+		buckets.length > 0 && intervalSec ? formatInterval(intervalSec) : null
+	);
 
 	const levels = $derived.by<string[]>(() => {
 		const seen = new Set<string>();
@@ -145,7 +146,8 @@
 					gap: 2,
 					size: 20,
 					space: 120,
-					values: (_u, splits) => splits.map((v) => formatTickDate(v * 1000, span * 1000))
+					values: (_u, splits, _axis, _space, incr) =>
+						splits.map((v) => formatTickDate(v * 1000, span * 1000, incr * 1000))
 				},
 				{
 					stroke: axisStroke,

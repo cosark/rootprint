@@ -42,30 +42,32 @@
 
 	function seedDraft(v: TimeRange) {
 		const { startTs: startSec, endTs: endSec } = resolveWindow(v);
+		// A relative window ends at "now"; its seconds would turn a plain re-apply into a seconds range.
+		const timePattern = (sec: number) =>
+			v.type === 'absolute' && sec % 60 !== 0 ? 'HH:mm:ss' : 'HH:mm';
 		dateStart = formatInZone(fromUnixTime(startSec), 'yyyy-MM-dd');
-		timeStart = formatInZone(fromUnixTime(startSec), 'HH:mm');
+		timeStart = formatInZone(fromUnixTime(startSec), timePattern(startSec));
 		dateEnd = formatInZone(fromUnixTime(endSec), 'yyyy-MM-dd');
-		timeEnd = formatInZone(fromUnixTime(endSec), 'HH:mm');
+		timeEnd = formatInZone(fromUnixTime(endSec), timePattern(endSec));
 	}
 
 	function onToggle(e: Event) {
 		if ((e as ToggleEvent).newState === 'open') seedDraft(value);
 	}
 
-	const startSec = $derived(parseRangeDateTime(dateStart, timeStart));
-	const endSec = $derived(parseRangeDateTime(dateEnd, timeEnd));
-
-	const isValid = $derived(startSec !== null && endSec !== null && endSec > startSec);
-
-	const validationMessage = $derived.by(() => {
-		if (startSec === null || endSec === null) return 'Enter a date and a time as HH:MM';
-		if (endSec <= startSec) return 'End must be after start';
-		return '';
+	const draft = $derived.by((): { range: TimeRange | null; error: string } => {
+		const start = parseRangeDateTime(dateStart, timeStart);
+		const end = parseRangeDateTime(dateEnd, timeEnd);
+		if (start === null || end === null) {
+			return { range: null, error: 'Enter a date and a time as HH:MM or HH:MM:SS' };
+		}
+		if (end <= start) return { range: null, error: 'End must be after start' };
+		return { range: { type: 'absolute', start, end }, error: '' };
 	});
 
 	function apply() {
-		if (startSec === null || endSec === null || endSec <= startSec) return;
-		onChange({ type: 'absolute', start: startSec, end: endSec });
+		if (!draft.range) return;
+		onChange(draft.range);
 		close();
 	}
 </script>
@@ -75,9 +77,9 @@
 	popovertarget={dd}
 	style="anchor-name:--{dd}"
 	title={timeZone.utc ? `${label} (UTC)` : label}
-	class="border-base-content/20 bg-base-100 hover:bg-base-200 text-ui focus-visible:border-base-content flex h-8 max-w-48 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded border px-2 select-none"
+	class="border-base-content/20 bg-base-100 hover:bg-base-200 text-ui focus-visible:border-base-content flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded border px-2 select-none"
 >
-	<span class="truncate">{label}</span>
+	<span>{label}</span>
 	{#if timeZone.utc}
 		<span class="text-muted shrink-0">UTC</span>
 	{/if}
@@ -109,10 +111,8 @@
 		{/each}
 	</div>
 
-	<!-- novalidate: parseRangeDateTime accepts 9:30, which the HH:MM pattern would block. -->
 	<form
 		class="flex w-72 flex-col p-3"
-		novalidate
 		onsubmit={(e) => {
 			e.preventDefault();
 			apply();
@@ -132,10 +132,9 @@
 			<input
 				type="text"
 				inputmode="numeric"
-				pattern="([01][0-9]|2[0-3]):[0-5][0-9]"
-				placeholder="HH:MM"
-				maxlength="5"
-				class="input input-sm w-20 font-mono"
+				placeholder="HH:MM:SS"
+				maxlength="8"
+				class="input input-sm w-24 font-mono"
 				aria-describedby="time-range-error"
 				aria-label="From time"
 				bind:value={timeStart}
@@ -154,10 +153,9 @@
 			<input
 				type="text"
 				inputmode="numeric"
-				pattern="([01][0-9]|2[0-3]):[0-5][0-9]"
-				placeholder="HH:MM"
-				maxlength="5"
-				class="input input-sm w-20 font-mono"
+				placeholder="HH:MM:SS"
+				maxlength="8"
+				class="input input-sm w-24 font-mono"
 				aria-describedby="time-range-error"
 				aria-label="To time"
 				bind:value={timeEnd}
@@ -165,12 +163,12 @@
 		</div>
 
 		<p id="time-range-error" class="text-error mt-2 min-h-4 text-xs" aria-live="polite">
-			{validationMessage}
+			{draft.error}
 		</p>
 
 		<div class="mt-auto flex justify-end gap-2 pt-3">
 			<button type="button" class="btn btn-ghost btn-sm" onclick={close}>Cancel</button>
-			<button type="submit" class="btn btn-primary btn-sm" disabled={!isValid}>Apply</button>
+			<button type="submit" class="btn btn-primary btn-sm" disabled={!draft.range}>Apply</button>
 		</div>
 	</form>
 </div>
