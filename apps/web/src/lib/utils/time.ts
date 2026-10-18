@@ -1,15 +1,30 @@
 import { format, formatDistanceToNow, getUnixTime, isValid, parse, parseISO } from 'date-fns';
 
+import { timeZone } from '#lib/stores/time-zone.svelte.js';
+
+const ISO_LAYOUT = 'yyyy-MM-dd HH:mm:ss.SSS';
+
+/** `pattern` must be a substring of ISO_LAYOUT: UTC mode slices it out of toISOString(). */
+export function formatInZone(d: Date | number, pattern: string): string {
+	const start = ISO_LAYOUT.indexOf(pattern);
+	if (start < 0) throw new Error(`formatInZone: '${pattern}' is not part of ${ISO_LAYOUT}`);
+	if (!timeZone.utc) return format(d, pattern);
+	return new Date(d)
+		.toISOString()
+		.replace('T', ' ')
+		.slice(start, start + pattern.length);
+}
+
 /** "YYYY-MM-DD HH:MM:SS.SSS" from an ISO string or epoch milliseconds — log and span timestamps. */
 export function formatTimestamp(input: string | number): string {
 	const d = typeof input === 'string' ? parseISO(input) : new Date(input);
-	return isValid(d) ? format(d, 'yyyy-MM-dd HH:mm:ss.SSS') : '—';
+	return isValid(d) ? formatInZone(d, 'yyyy-MM-dd HH:mm:ss.SSS') : '—';
 }
 
 /** "YYYY-MM-DD HH:MM:SS" — second precision, used in the activity tables. */
 export function formatActivityTimestamp(iso: string): string {
 	const d = parseISO(iso);
-	return isValid(d) ? format(d, 'yyyy-MM-dd HH:mm:ss') : '—';
+	return isValid(d) ? formatInZone(d, 'yyyy-MM-dd HH:mm:ss') : '—';
 }
 
 export function formatRelativeTime(input: string | Date): string {
@@ -46,19 +61,23 @@ export function formatDate(input: string | Date): string {
 /** "YYYY-MM-DD HH:MM" */
 export function formatDateTime(input: string | Date): string {
 	const d = typeof input === 'string' ? parseISO(input) : input;
-	return isValid(d) ? format(d, 'yyyy-MM-dd HH:mm') : '—';
+	return isValid(d) ? formatInZone(d, 'yyyy-MM-dd HH:mm') : '—';
 }
 
-export function parseLocalDateTime(dateStr: string, timeStr: string): number | null {
+export function parseRangeDateTime(dateStr: string, timeStr: string): number | null {
+	if (timeZone.utc) {
+		const ms = Date.parse(`${dateStr}T${timeStr.padStart(5, '0')}Z`);
+		return Number.isNaN(ms) ? null : ms / 1000;
+	}
 	const d = parse(`${dateStr} ${timeStr}`, 'yyyy-MM-dd HH:mm', new Date());
 	return isValid(d) ? getUnixTime(d) : null;
 }
 
 export function formatTickDate(d: Date | number, spanMs: number): string {
 	const oneDay = 24 * 60 * 60 * 1000;
-	return spanMs <= oneDay ? format(d, 'HH:mm') : format(d, 'MM-dd HH:mm');
+	return spanMs <= oneDay ? formatInZone(d, 'HH:mm') : formatInZone(d, 'MM-dd HH:mm');
 }
 
 export function formatTooltipDate(d: Date | number): string {
-	return format(d, 'yyyy-MM-dd HH:mm:ss');
+	return formatInZone(d, 'yyyy-MM-dd HH:mm:ss');
 }

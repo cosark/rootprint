@@ -4,6 +4,8 @@
 
 	import { untrack, type Snippet } from 'svelte';
 
+	import { timeZone } from '#lib/stores/time-zone.svelte.js';
+
 	let {
 		data,
 		height,
@@ -34,7 +36,16 @@
 	let tooltipTop = $state(0);
 	let tooltipIdx = $state<number | null>(null);
 
-	const opts = $derived(ctor ? makeOpts(ctor) : null);
+	// The zone is read here, not in the build effect, so a flip re-runs makeOpts too: it snapshots
+	// legend visibility, and axis `values` callbacks run outside Svelte's tracking.
+	const opts = $derived.by(() => {
+		const UPlot = ctor;
+		if (!UPlot) return null;
+		const tzDate = timeZone.utc
+			? (ts: number) => UPlot.tzDate(new Date(ts * 1e3), 'Etc/UTC')
+			: undefined;
+		return { tzDate, ...makeOpts(UPlot) };
+	});
 
 	function updateTooltip(u: uPlotLib) {
 		const idx = u.cursor.idx;

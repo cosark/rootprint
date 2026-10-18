@@ -1,6 +1,7 @@
-import { format, fromUnixTime, getUnixTime, isSameDay } from 'date-fns';
+import { fromUnixTime, getUnixTime } from 'date-fns';
 
 import type { TimeRange } from '#lib/types.js';
+import { formatInZone } from '#lib/utils/time.js';
 import { PRESET_OPTIONS } from 'api/constants';
 import type { Preset } from 'api/types';
 
@@ -57,12 +58,12 @@ export function formatTimeRangeLabel(r: TimeRange): string {
 	if (r.type === 'relative') return PRESET_LABELS[r.preset];
 	const start = fromUnixTime(r.start);
 	const end = fromUnixTime(r.end);
-	const startMd = format(start, 'MM-dd');
-	const startHm = format(start, 'HH:mm');
-	const endHm = format(end, 'HH:mm');
-	if (isSameDay(start, end)) {
+	const startMd = formatInZone(start, 'MM-dd');
+	const startHm = formatInZone(start, 'HH:mm');
+	const endHm = formatInZone(end, 'HH:mm');
+	if (formatInZone(start, 'yyyy-MM-dd') === formatInZone(end, 'yyyy-MM-dd')) {
 		return `${startMd} ${startHm} → ${endHm}`;
 	}
-	const endMd = format(end, 'MM-dd');
+	const endMd = formatInZone(end, 'MM-dd');
 	return `${startMd} ${startHm} → ${endMd} ${endHm}`;
 }

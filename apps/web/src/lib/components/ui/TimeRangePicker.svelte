@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { format, fromUnixTime } from 'date-fns';
+	import { fromUnixTime } from 'date-fns';
 	import { ChevronDown } from 'lucide-svelte';
 
 	import {
@@ -9,7 +9,8 @@
 		resolveWindow,
 		type Preset
 	} from '#lib/utils/time-range.js';
-	import { parseLocalDateTime } from '#lib/utils/time.js';
+	import { formatInZone, parseRangeDateTime } from '#lib/utils/time.js';
+	import { timeZone } from '#lib/stores/time-zone.svelte.js';
 	import type { TimeRange } from '#lib/types.js';
 
 	let {
@@ -41,18 +42,18 @@
 
 	function seedDraft(v: TimeRange) {
 		const { startTs: startSec, endTs: endSec } = resolveWindow(v);
-		dateStart = format(fromUnixTime(startSec), 'yyyy-MM-dd');
-		timeStart = format(fromUnixTime(startSec), 'HH:mm');
-		dateEnd = format(fromUnixTime(endSec), 'yyyy-MM-dd');
-		timeEnd = format(fromUnixTime(endSec), 'HH:mm');
+		dateStart = formatInZone(fromUnixTime(startSec), 'yyyy-MM-dd');
+		timeStart = formatInZone(fromUnixTime(startSec), 'HH:mm');
+		dateEnd = formatInZone(fromUnixTime(endSec), 'yyyy-MM-dd');
+		timeEnd = formatInZone(fromUnixTime(endSec), 'HH:mm');
 	}
 
 	function onToggle(e: Event) {
 		if ((e as ToggleEvent).newState === 'open') seedDraft(value);
 	}
 
-	const startSec = $derived(parseLocalDateTime(dateStart, timeStart));
-	const endSec = $derived(parseLocalDateTime(dateEnd, timeEnd));
+	const startSec = $derived(parseRangeDateTime(dateStart, timeStart));
+	const endSec = $derived(parseRangeDateTime(dateEnd, timeEnd));
 
 	const isValid = $derived(startSec !== null && endSec !== null && endSec > startSec);
 
@@ -73,10 +74,13 @@
 	type="button"
 	popovertarget={dd}
 	style="anchor-name:--{dd}"
-	title={label}
+	title={timeZone.utc ? `${label} (UTC)` : label}
 	class="border-base-content/20 bg-base-100 hover:bg-base-200 text-ui focus-visible:border-base-content flex h-8 max-w-48 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded border px-2 select-none"
 >
 	<span class="truncate">{label}</span>
+	{#if timeZone.utc}
+		<span class="text-muted shrink-0">UTC</span>
+	{/if}
 	<ChevronDown class="text-muted size-3 shrink-0" aria-hidden="true" />
 </button>
 
@@ -105,7 +109,7 @@
 		{/each}
 	</div>
 
-	<!-- novalidate: parseLocalDateTime accepts 9:30, which the HH:MM pattern would block. -->
+	<!-- novalidate: parseRangeDateTime accepts 9:30, which the HH:MM pattern would block. -->
 	<form
 		class="flex w-72 flex-col p-3"
 		novalidate
@@ -114,7 +118,7 @@
 			apply();
 		}}
 	>
-		<p class="section-label mb-2">Absolute range</p>
+		<p class="section-label mb-2">Absolute range{timeZone.utc ? ' (UTC)' : ''}</p>
 
 		<p class="text-muted mb-1 text-xs">From</p>
 		<div class="flex gap-2">

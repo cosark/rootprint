@@ -12,6 +12,7 @@ build/
 dist/
 data/
 /docs/
+openspec/
 
 # Quickwit
 .quickwit/
@@ -32,6 +33,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
 .superpowers/
+.opencode/
 .planning/
 deploy.sh
 deploy/*

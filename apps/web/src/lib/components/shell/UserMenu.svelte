@@ -4,6 +4,7 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { authClient } from '#lib/auth-client.js';
 	import { DEP } from '#lib/api/deps.js';
+	import { setUtc, timeZone } from '#lib/stores/time-zone.svelte.js';
 	import { avatarColor, avatarInitials } from '#lib/utils/avatar.js';
 
 	type User = { id: string; name: string | null; email: string };
@@ -66,6 +67,27 @@
 	<div class="border-line border-b px-4 py-3">
 		<p class="text-sm">{user.name ?? 'User'}</p>
 		<p class="text-muted mt-0.5 font-mono text-xs">{user.email}</p>
+	</div>
+	<div class="border-line flex items-center justify-between border-b px-4 py-2">
+		<span id="{dd}-tz" class="text-xs">Time zone</span>
+		<div class="join" role="group" aria-labelledby="{dd}-tz">
+			<button
+				type="button"
+				class="btn btn-ghost join-item btn-xs"
+				aria-pressed={!timeZone.utc}
+				onclick={() => setUtc(false)}
+			>
+				Local
+			</button>
+			<button
+				type="button"
+				class="btn btn-ghost join-item btn-xs"
+				aria-pressed={timeZone.utc}
+				onclick={() => setUtc(true)}
+			>
+				UTC
+			</button>
+		</div>
 	</div>
 	<div class="p-2">
 		<a
