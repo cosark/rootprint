@@ -1,12 +1,12 @@
 import { SEARCH_MAX_LIMIT } from 'api/constants';
 import { composeQuery } from 'api/query';
+import { bucketSeconds, formatInterval } from 'api/time';
 import type { ExploreSort, ExploreStatus } from 'api/constants';
 import type { InferResponseType } from 'hono/client';
 
 import { client } from '#lib/api/client.js';
 import { ApiError, readApiError, toFieldErrors } from '#lib/api/errors.js';
 import { searchLogs } from '#lib/api/log-search.js';
-import { chartIntervalSeconds, formatInterval } from '#lib/utils/histogram.js';
 import { resolveWindow } from '#lib/utils/time-range.js';
 import {
 	SPAN_ID_FIELD,
@@ -105,7 +105,7 @@ export async function fetchExploreOverview(
 		{
 			query: {
 				...filterQuery(filters),
-				interval: formatInterval(chartIntervalSeconds(filters.endTs - filters.startTs))
+				interval: formatInterval(bucketSeconds(filters.endTs - filters.startTs))
 			}
 		},
 		{ init: { signal } }

@@ -5,6 +5,7 @@ import { type QuickwitClient } from '@rootprint-io/quickwit-js';
 
 import { EXPORT_MAX_ROWS } from '../constants.js';
 import { requestSignal, toQuickwitTimestamp } from '../lib/quickwit/client.js';
+import { epochToMs } from '../lib/time.js';
 import type { ExportLogsQueryInput } from '../schemas/export.js';
 
 export type ExportPreflightResult = {
@@ -51,10 +52,7 @@ function getPath(obj: unknown, path: string): unknown {
 
 function formatTimestamp(v: unknown): string {
 	if (typeof v !== 'number') return formatScalar(v);
-	// Quickwit emits the index's configured unit; for any date after 1973 the magnitude alone
-	// tells seconds, milliseconds, microseconds and nanoseconds apart.
-	const ms = v < 1e11 ? v * 1e3 : v < 1e14 ? v : v < 1e17 ? v / 1e3 : v / 1e6;
-	return new Date(ms).toISOString();
+	return new Date(epochToMs(v)).toISOString();
 }
 
 function formatTextBatch(rows: Record<string, unknown>[], cfg: IndexConfig): Uint8Array {

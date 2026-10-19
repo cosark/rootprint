@@ -1,19 +1,17 @@
+import { bucketSeconds, formatInterval } from 'api/time';
+
 import { client } from '#lib/api/client.js';
 import { UNKNOWN_LEVEL } from '#lib/constants/level-colors.js';
 import { readApiError } from '#lib/api/errors.js';
 import type { HistogramBucket, HistogramInput, HistogramResult } from '#lib/types.js';
-import {
-	computeHistogramIntervalSeconds,
-	formatInterval,
-	padHistogramBuckets
-} from '#lib/utils/histogram.js';
+import { padHistogramBuckets } from '#lib/utils/histogram.js';
 
 export async function fetchHistogram(
 	input: HistogramInput,
 	signal?: AbortSignal
 ): Promise<HistogramResult> {
 	const { startTs: startSec, endTs: endSec } = input;
-	const intervalSec = computeHistogramIntervalSeconds(endSec - startSec);
+	const intervalSec = bucketSeconds(endSec - startSec);
 	const interval = formatInterval(intervalSec);
 
 	const res = await client.api.indexes[':indexId'].logs.histogram.$get(
@@ -51,5 +49,5 @@ export async function fetchHistogram(
 	}
 
 	const buckets: HistogramBucket[] = padHistogramBuckets(bucketMap, startSec, endSec, intervalSec);
-	return { buckets, totalDocCount };
+	return { buckets, totalDocCount, intervalSec };
 }

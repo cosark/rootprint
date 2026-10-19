@@ -4,6 +4,7 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { authClient } from '#lib/auth-client.js';
 	import { DEP } from '#lib/api/deps.js';
+	import { setUtc, timeZone } from '#lib/stores/time-zone.svelte.js';
 	import { avatarColor, avatarInitials } from '#lib/utils/avatar.js';
 
 	type User = { id: string; name: string | null; email: string };
@@ -67,6 +68,15 @@
 		<p class="text-sm">{user.name ?? 'User'}</p>
 		<p class="text-muted mt-0.5 font-mono text-xs">{user.email}</p>
 	</div>
+	<label class="border-line flex cursor-pointer items-center justify-between border-b px-4 py-2">
+		<span class="text-xs">Time in UTC</span>
+		<input
+			type="checkbox"
+			class="toggle toggle-sm"
+			checked={timeZone.utc}
+			onchange={(e) => setUtc(e.currentTarget.checked)}
+		/>
+	</label>
 	<div class="p-2">
 		<a
 			href="/profile"

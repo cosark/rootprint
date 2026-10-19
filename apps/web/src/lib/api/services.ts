@@ -1,9 +1,9 @@
 import type { ERROR_HTTP_STATUSES } from 'api/constants';
+import { bucketSeconds, formatInterval } from 'api/time';
 import type { InferResponseType } from 'hono/client';
 
 import { client } from '#lib/api/client.js';
 import { readApiError } from '#lib/api/errors.js';
-import { computeHistogramIntervalSeconds, formatInterval } from '#lib/utils/histogram.js';
 
 const services = client.api.services;
 
@@ -31,7 +31,7 @@ export async function getServiceHealth(
 				service: input.service ?? undefined,
 				startTs: String(input.startTs),
 				endTs: String(input.endTs),
-				interval: formatInterval(computeHistogramIntervalSeconds(input.endTs - input.startTs)),
+				interval: formatInterval(bucketSeconds(input.endTs - input.startTs)),
 				endpointLimit: String(input.endpointLimit)
 			}
 		},

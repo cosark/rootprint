@@ -69,6 +69,7 @@ export class SearchStore {
 	configError = $state<string | null>(null);
 
 	histogramBuckets = $state.raw<HistogramBucket[]>([]);
+	histogramIntervalSec = $state<number | undefined>();
 	histogramLoading = $state(false);
 	histogramError = $state<string | null>(null);
 
@@ -555,6 +556,7 @@ export class SearchStore {
 			);
 			if (!this.#histogramGuard.isCurrent(requestId)) return;
 			this.histogramBuckets = result.buckets;
+			this.histogramIntervalSec = result.intervalSec;
 			this.numHits = result.totalDocCount;
 			this.#histogramFetchedFor = fetchKey;
 

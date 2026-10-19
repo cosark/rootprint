@@ -75,7 +75,8 @@
 					gap: 4,
 					size: 28,
 					space: 80,
-					values: (_u, splits) => splits.map((s) => formatTickDate(s * 1000, span))
+					values: (_u, splits, _axis, _space, incr) =>
+						splits.map((s) => formatTickDate(s * 1000, span, incr * 1000))
 				},
 				{
 					side: 1,

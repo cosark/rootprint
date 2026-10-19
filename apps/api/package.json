@@ -23,6 +23,10 @@
 		"./query": {
 			"types": "./src/lib/quickwit/query.ts",
 			"default": "./src/lib/quickwit/query.ts"
+		},
+		"./time": {
+			"types": "./src/lib/time.ts",
+			"default": "./src/lib/time.ts"
 		}
 	},
 	"scripts": {

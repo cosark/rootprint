@@ -8,6 +8,7 @@ import { db } from '../lib/db.js';
 import { logger } from '../lib/logger.js';
 import { isHangup, quickwit } from '../lib/quickwit/client.js';
 import { quickwitErrorToHttp } from '../lib/quickwit/errors.js';
+import { bucketSeconds, formatInterval } from '../lib/time.js';
 import {
 	FieldValuesInput,
 	GetIndexFieldsInput,
@@ -17,7 +18,7 @@ import {
 	SearchLogsInput,
 	SearchSpansInput
 } from '../schemas/mcp.js';
-import { intervalSeconds, MAX_BUCKETS, MAX_RANGE_SECONDS } from '../schemas/services.js';
+import { intervalSeconds, MAX_BUCKETS } from '../schemas/services.js';
 import { hasBalancedParens, type ExploreSpansInput } from '../schemas/traces.js';
 import { badRequest, HttpError, isPublicError } from '../utils/http-error.js';
 import { isoTimestampString } from '../utils/valibot.js';
@@ -38,8 +39,6 @@ export type McpContext = { userId: string; apiKeyId?: string };
 const MAX_STRING_CHARS = 2_000;
 // Claude Code drops MCP results over ~25k tokens; an error that says how to narrow beats a lost call.
 const MAX_OUTPUT_CHARS = 80_000;
-const TARGET_BUCKETS = 60;
-const AUTO_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '3h', '6h', '12h', '1d', '7d'];
 const TIME_FORMAT = 'must be ISO 8601 with a timezone (2026-10-06T14:30:00Z) or now-<n>[smhd]';
 // The immortal flagd traces carry ~1,000 spans; capping keeps one trace from filling the context.
 const MAX_TOOL_SPANS = 200;
@@ -115,10 +114,7 @@ function timeRange(
 // Agents pick bad intervals (1s over a week overflows Quickwit's request-wide bucket limit), so an
 // absent one auto-sizes to about 60 buckets and an explicit one is capped like the REST routes.
 function histogramInterval(requested: string | undefined, rangeSeconds: number): string {
-	const interval =
-		requested ??
-		AUTO_INTERVALS.find((i) => rangeSeconds / intervalSeconds(i) <= TARGET_BUCKETS) ??
-		'7d';
+	const interval = requested ?? formatInterval(bucketSeconds(rangeSeconds));
 	if (rangeSeconds / intervalSeconds(interval) > MAX_BUCKETS) {
 		throw badRequest('interval produces too many buckets; use a wider interval or a shorter range');
 	}
@@ -261,16 +257,13 @@ export function buildMcpServer(ctx: McpContext): McpServer {
 		'search_spans',
 		{
 			description:
-				'Search spans in the span store. Filter by service, operation (span name), status, duration (minMs/maxMs), root spans only, or a free Quickwit query on span fields (get_index_fields on the span store lists them). sort: -duration returns the slowest spans first; status: error returns failing spans. Follow a traceId with get_trace. Time range is at most 30 days.',
+				'Search spans in the span store. Filter by service, operation (span name), status, duration (minMs/maxMs), root spans only, or a free Quickwit query on span fields (get_index_fields on the span store lists them). sort: -duration returns the slowest spans first; status: error returns failing spans. Follow a traceId with get_trace.',
 			annotations: { readOnlyHint: true },
 			inputSchema: toStandardJsonSchema(SearchSpansInput)
 		},
 		({ query, start, end, ...filters }) =>
 			runTool('search_spans', async () => {
-				const { startTs, endTs, rangeSeconds } = timeRange(start, end);
-				if (rangeSeconds > MAX_RANGE_SECONDS) {
-					throw badRequest('Trace range cannot exceed 30 days');
-				}
+				const { startTs, endTs } = timeRange(start, end);
 				if (
 					filters.minMs !== undefined &&
 					filters.maxMs !== undefined &&

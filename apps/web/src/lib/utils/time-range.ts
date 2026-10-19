@@ -1,6 +1,7 @@
-import { format, fromUnixTime, getUnixTime, isSameDay } from 'date-fns';
+import { fromUnixTime, getUnixTime } from 'date-fns';
 
 import type { TimeRange } from '#lib/types.js';
+import { formatInZone } from '#lib/utils/time.js';
 import { PRESET_OPTIONS } from 'api/constants';
 import type { Preset } from 'api/types';
 
@@ -57,12 +58,14 @@ export function formatTimeRangeLabel(r: TimeRange): string {
 	if (r.type === 'relative') return PRESET_LABELS[r.preset];
 	const start = fromUnixTime(r.start);
 	const end = fromUnixTime(r.end);
-	const startMd = format(start, 'MM-dd');
-	const startHm = format(start, 'HH:mm');
-	const endHm = format(end, 'HH:mm');
-	if (isSameDay(start, end)) {
-		return `${startMd} ${startHm} → ${endHm}`;
+	const time = r.start % 60 === 0 && r.end % 60 === 0 ? 'HH:mm' : 'HH:mm:ss';
+	const currentYear = formatInZone(new Date(), 'yyyy');
+	const day = (d: Date) =>
+		formatInZone(d, formatInZone(d, 'yyyy') === currentYear ? 'MM-dd' : 'yyyy-MM-dd');
+	const startLabel = `${day(start)} ${formatInZone(start, time)}`;
+	const endTime = formatInZone(end, time);
+	if (formatInZone(start, 'yyyy-MM-dd') === formatInZone(end, 'yyyy-MM-dd')) {
+		return `${startLabel} → ${endTime}`;
 	}
-	const endMd = format(end, 'MM-dd');
-	return `${startMd} ${startHm} → ${endMd} ${endHm}`;
+	return `${startLabel} → ${day(end)} ${endTime}`;
 }

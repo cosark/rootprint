@@ -14,7 +14,7 @@
 	import type { HistogramResult } from '#lib/types.js';
 	import { formatBytes, formatCount, formatOrDash } from '#lib/utils/format.js';
 	import { serialize } from '#lib/utils/query-params.js';
-	import { formatAge, formatDate, formatRelativeTime } from '#lib/utils/time.js';
+	import { formatDate, formatRelativeTime } from '#lib/utils/time.js';
 	import { windowToSpanMs, type Window } from '#lib/utils/time-range.js';
 
 	type Props = {
@@ -63,7 +63,7 @@
 			{ label: 'Splits', value: formatCount(d.numSplits) },
 			{
 				label: 'Last event',
-				value: formatOrDash(last, (t) => formatAge(new Date(t * 1000))),
+				value: formatOrDash(last, (t) => formatRelativeTime(new Date(t * 1000))),
 				live: age === null ? undefined : Math.abs(age) < LIVE_WINDOW_S
 			}
 		];
@@ -122,6 +122,7 @@
 				<LogFrequencyChart
 					label="Events, last 24 hours"
 					buckets={h.buckets}
+					intervalSec={h.intervalSec}
 					loading={false}
 					error={null}
 					emptyHint="Nothing was indexed in the last 24 hours"

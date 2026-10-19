@@ -72,6 +72,7 @@ export interface HistogramInput {
 export interface HistogramResult {
 	buckets: HistogramBucket[];
 	totalDocCount: number;
+	intervalSec: number;
 }
 
 export interface FieldConfig {

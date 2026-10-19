@@ -149,6 +149,7 @@
 
 			<LogFrequencyChart
 				buckets={store.histogramBuckets}
+				intervalSec={store.histogramIntervalSec}
 				loading={store.histogramLoading}
 				error={store.histogramError}
 				bind:collapsed={chartCollapsed}
