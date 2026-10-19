@@ -68,27 +68,15 @@
 		<p class="text-sm">{user.name ?? 'User'}</p>
 		<p class="text-muted mt-0.5 font-mono text-xs">{user.email}</p>
 	</div>
-	<div class="border-line flex items-center justify-between border-b px-4 py-2">
-		<span id="{dd}-tz" class="text-xs">Time zone</span>
-		<div class="join" role="group" aria-labelledby="{dd}-tz">
-			<button
-				type="button"
-				class="btn btn-ghost join-item btn-xs"
-				aria-pressed={!timeZone.utc}
-				onclick={() => setUtc(false)}
-			>
-				Local
-			</button>
-			<button
-				type="button"
-				class="btn btn-ghost join-item btn-xs"
-				aria-pressed={timeZone.utc}
-				onclick={() => setUtc(true)}
-			>
-				UTC
-			</button>
-		</div>
-	</div>
+	<label class="border-line flex cursor-pointer items-center justify-between border-b px-4 py-2">
+		<span class="text-xs">Time in UTC</span>
+		<input
+			type="checkbox"
+			class="toggle toggle-sm"
+			checked={timeZone.utc}
+			onchange={(e) => setUtc(e.currentTarget.checked)}
+		/>
+	</label>
 	<div class="p-2">
 		<a
 			href="/profile"
