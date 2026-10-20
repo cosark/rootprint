@@ -1,5 +1,6 @@
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
+import { untrack } from 'svelte';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 import type {
@@ -11,7 +12,8 @@ import type {
 	LevelBucket,
 	LogField,
 	LogHit,
-	ParsedQuery
+	ParsedQuery,
+	SearchInput
 } from '#lib/types.js';
 import { composeQuery } from 'api/query';
 import { searchLogs } from '#lib/api/log-search.js';
@@ -19,7 +21,7 @@ import { fetchHistogram } from '#lib/api/histogram.js';
 import { loadFields } from '#lib/api/fields.js';
 import { getIndexConfig } from '#lib/api/indexes.js';
 import { getPreferences, setPreferences } from '#lib/api/preferences.js';
-import { buildQueryUrl, serialize } from '#lib/utils/query-params.js';
+import { buildQueryUrl } from '#lib/utils/query-params.js';
 import { foldRuns, groupConsecutiveHits, type LogListRow } from '#lib/components/logs/fold-hits.js';
 import { normalizeHit } from '#lib/components/logs/normalize-hit.js';
 import { readLastIndex, writeLastIndex, clearLastIndex } from '#lib/utils/last-index.js';
@@ -31,8 +33,6 @@ import {
 	serializeTimeRange,
 	type FieldSample
 } from '#lib/utils/fields.js';
-import { RequestGuard } from '#lib/stores/request-guard.js';
-import { isAbortError } from '#lib/api/errors.js';
 import type { DisplayMode, Preferences } from 'api/types';
 
 const BATCH_SIZE = 200;
@@ -40,6 +40,7 @@ const MAX_OFFSET = 10_000;
 
 // Collapse rapid preference changes (toggles, drag-reorder) into a single PUT.
 const PREF_SAVE_DEBOUNCE_MS = 300;
+const DEFAULT_PREFS: Preferences = { displayFields: null, lineWrap: false, displayMode: 'table' };
 
 export interface SearchStoreOptions {
 	/** Reactive accessor for the URL-derived query. Read inside $effect to subscribe. */
@@ -58,12 +59,16 @@ export class SearchStore {
 	#lastBatchFull = $state(false);
 	searchError = $state<string | null>(null);
 	hasSearched = $state(false);
-	/** Invalidates search-data caches when Run refreshes an unchanged query. */
+	/** Invalidates search-data caches when the view already shown is asked for again (Run, a re-picked range). */
 	refreshRevision = $state(0);
 	/** Absolute start of the in-flight search window, in seconds-since-epoch. `undefined` before the first search. */
-	resolvedStartTs = $state<number | undefined>();
+	get resolvedStartTs(): number | undefined {
+		return this.#input?.startTs;
+	}
 	/** Absolute end of the in-flight search window, in seconds-since-epoch. `undefined` before the first search. */
-	resolvedEndTs = $state<number | undefined>();
+	get resolvedEndTs(): number | undefined {
+		return this.#input?.endTs;
+	}
 
 	fieldConfig = $state<FieldConfig | null>(null);
 	configError = $state<string | null>(null);
@@ -109,12 +114,7 @@ export class SearchStore {
 	fieldsLoading = $state(false);
 	fieldsError = $state<string | null>(null);
 	#fieldsLoadedFor = $state<string | null>(null);
-	// The key match already implies a selected index and a loaded config: both are nulled with it.
-	fieldsReady = $derived(
-		!this.fieldsLoading &&
-			this.#fieldsLoadedFor ===
-				`${this.selectedIndex}|${serializeTimeRange(this.timeRange)}|${this.refreshRevision}`
-	);
+	#fieldsReload = $state(0);
 
 	columnFields = $derived.by<LogField[]>(() => {
 		const cfg = this.fieldConfig;
@@ -156,7 +156,6 @@ export class SearchStore {
 	});
 
 	#expandedFolds = new SvelteSet<string>();
-	#autoSearchSig: string | null = null;
 
 	foldEnabled = $derived(page.url.searchParams.get('fold') === '1');
 
@@ -187,21 +186,35 @@ export class SearchStore {
 	#indexes: () => IndexOption[];
 	#onFreshSearch?: () => void;
 	#disposed = false;
-	#searchAbort?: AbortController;
-	#searchGuard = new RequestGuard();
-	#configGuard = new RequestGuard();
-	#configFetchedFor: string | null = null;
-	#histogramAbort?: AbortController;
-	#histogramGuard = new RequestGuard();
-	#histogramFetchedFor: string | null = null;
-	#fieldsAbort?: AbortController;
-	#fieldsGuard = new RequestGuard();
-	#fieldsFetchedFor: string | null = null;
-	#activeFieldsGuard = new RequestGuard();
-	#activeFieldsFetchedFor: string | null = null;
-	#confirmedPrefs: Preferences = { displayFields: null, lineWrap: false, displayMode: 'table' };
+	// The fresh search a load-more page extends; aborted when the next one starts.
+	#searchRun?: { signal: AbortSignal; request: SearchInput };
+	#confirmedPrefs = DEFAULT_PREFS;
 	#prefSave: { timer: ReturnType<typeof setTimeout>; commit: () => void } | null = null;
 	#prefSaveSeq = 0;
+
+	// Request effects read these, never the parsed URL: a derived that recomputes to an equal value
+	// doesn't rerun its dependents, so a request refetches only when one of its own inputs changes.
+	// Null until the URL names the active index, so nothing loads for a fallback the redirect replaces.
+	#index = $derived.by(() => {
+		const active = this.selectedIndex;
+		return this.#parsedQuery().index === active ? active : null;
+	});
+	#composedQuery = $derived(this.composedQuery);
+	#rangeKey = $derived(serializeTimeRange(this.timeRange));
+	#sort = $derived(this.sortDirection);
+	#fieldsKey = $derived(`${this.#index}|${this.#rangeKey}|${this.refreshRevision}`);
+	// The key match already implies a selected index and a loaded config: both are nulled with it.
+	fieldsReady = $derived(!this.fieldsLoading && this.#fieldsLoadedFor === this.#fieldsKey);
+
+	// Sort is left out: toggling it re-reads the window already on screen.
+	#input = $derived.by<HistogramInput | null>(() => {
+		const indexId = this.#index;
+		const query = this.#composedQuery;
+		void this.#rangeKey;
+		void this.refreshRevision;
+		if (indexId === null) return null;
+		return { indexId, query, ...untrack(() => resolveWindow(this.timeRange)) };
+	});
 
 	constructor(opts: SearchStoreOptions) {
 		this.#indexes = opts.indexes;
@@ -238,21 +251,22 @@ export class SearchStore {
 		return composeQuery(this.query, this.filters);
 	}
 
+	/** Navigates to the merged query; asking for the view already shown refreshes it instead. */
 	navigateQuery(partial: Partial<ParsedQuery>, opts?: { push?: boolean }): void {
-		this.#searchAbort?.abort();
-		this.#histogramAbort?.abort();
-		// Re-search even when the URL is unchanged; only the fold toggle skips it.
-		this.#autoSearchSig = null;
 		const url = buildQueryUrl(page.url.searchParams, partial);
+		// Both sides canonical, so a hand-edited URL spelling out defaults still counts as unchanged.
+		if (url === buildQueryUrl(page.url.searchParams, {})) {
+			this.refreshRevision += 1;
+			return;
+		}
 		goto(url, { replace: !opts?.push, reset: false });
 	}
 
 	runQuery(query: string): void {
-		if (this.#disposed || this.selectedIndex === null) return;
-		if (query === this.query) {
+		if (this.selectedIndex === null) return;
+		// Equivalent text changes the URL without invalidating the request inputs.
+		if (query !== this.query && composeQuery(query, this.filters) === this.composedQuery) {
 			this.refreshRevision += 1;
-			this.#runFreshSearch(true);
-			return;
 		}
 		this.navigateQuery({ query }, { push: true });
 	}
@@ -340,8 +354,6 @@ export class SearchStore {
 		// Counts belong to the index that produced them; kept, they would rank the next index's fields.
 		this.#countPaths([]);
 		this.#lastBatchFull = false;
-		this.resolvedStartTs = undefined;
-		this.resolvedEndTs = undefined;
 		this.searchError = null;
 		this.navigateQuery({ index: indexId, query: '', filters: [] }, { push: true });
 	}
@@ -354,7 +366,8 @@ export class SearchStore {
 	}
 
 	/**
-	 * Installs the URL → search() $effect.
+	 * Installs the index redirect and one request effect per resource; each effect's teardown
+	 * cancels its request, so a rerun or leaving the page supersedes it.
 	 * MUST be called inside component context (not from the constructor).
 	 */
 	setupAutoSearch(): void {
@@ -362,6 +375,7 @@ export class SearchStore {
 			return () => this.dispose();
 		});
 
+		// Puts the remembered or first index into the URL; requests wait for it through `#index`.
 		$effect(() => {
 			const urlIndex = this.#parsedQuery().index;
 			if (urlIndex === null) {
@@ -375,130 +389,172 @@ export class SearchStore {
 
 			const active = this.selectedIndex;
 			if (active === null) return;
+			if (urlIndex !== active) this.navigateQuery({ index: active });
+			else writeLastIndex(active);
+		});
 
-			if (this.#parsedQuery().index !== active) {
-				this.navigateQuery({ index: active });
+		$effect(() => {
+			const input = this.#input;
+			const sortDirection = this.#sort;
+			if (input === null) {
+				this.loading = 'idle';
+				this.loadingMore = false;
 				return;
 			}
-
-			if (active !== this.#configFetchedFor) {
-				this.#configFetchedFor = active;
-				this.#loadConfig(active);
-			}
-
-			if (active !== this.#activeFieldsFetchedFor) {
-				this.#activeFieldsFetchedFor = active;
-				this.#loadActiveFields(active);
-			}
-
-			const searchSig = `${active}|${serialize(this.#parsedQuery()).toString()}`;
-			if (searchSig !== this.#autoSearchSig) {
-				this.#autoSearchSig = searchSig;
-				this.#runFreshSearch();
-			}
-
-			writeLastIndex(active);
-		});
-
-		// Keyed by the serialized range, never by resolved seconds — a relative preset resolves to a
-		// new `now` on every read and would never settle.
-		$effect(() => {
-			const active = this.selectedIndex;
-			const cfg = this.fieldConfig;
-			if (active === null || cfg === null) return;
-
-			const key = `${active}|${cfg.isOtel ? '1' : '0'}|${cfg.timestampField}|${cfg.messageField}|${serializeTimeRange(this.timeRange)}|${this.refreshRevision}`;
-			if (key === this.#fieldsFetchedFor) return;
-			this.#fieldsFetchedFor = key;
-			this.#loadFields(active, cfg);
-		});
-	}
-
-	#runFreshSearch(forceHistogram = false): void {
-		const timeWindow = resolveWindow(this.timeRange);
-		void this.#runSearch(false, timeWindow);
-		void this.#fetchHistogram(timeWindow, forceHistogram);
-	}
-
-	async #runSearch(
-		append: boolean,
-		timeWindow?: { startTs: number; endTs: number }
-	): Promise<void> {
-		if (this.#disposed) return;
-		if (this.selectedIndex === null) return;
-
-		this.#searchAbort?.abort();
-		const controller = new AbortController();
-		this.#searchAbort = controller;
-		const requestId = this.#searchGuard.next();
-
-		// Appending happens ahead of the viewport, so it stays silent.
-		if (append) {
-			this.loadingMore = true;
-		} else {
+			const controller = new AbortController();
+			const request: SearchInput = { ...input, sortDirection, limit: BATCH_SIZE, offset: 0 };
+			this.#searchRun = { signal: controller.signal, request };
 			this.loading = 'fresh';
+			// An aborted page never clears its own flag.
+			this.loadingMore = false;
 			this.searchError = null;
-		}
+			searchLogs(request, controller.signal)
+				.then((result) => {
+					if (controller.signal.aborted) return;
+					this.rawHits = result.rawHits;
+					this.#expandedFolds.clear();
+					this.hasSearched = true;
+					this.#onFreshSearch?.();
+					this.#lastBatchFull = result.rawHits.length === BATCH_SIZE;
+					this.elapsedTimeMicros = result.elapsedTimeMicros;
+					this.#countPaths(result.rawHits);
+				})
+				.catch((e: unknown) => {
+					if (controller.signal.aborted) return;
+					this.searchError = e instanceof Error ? e.message : 'Search failed';
+					this.rawHits = [];
+					this.#countPaths([]);
+					this.elapsedTimeMicros = 0;
+					this.#lastBatchFull = false;
+				})
+				.finally(() => {
+					if (!controller.signal.aborted) this.loading = 'idle';
+				});
+			return () => controller.abort();
+		});
 
-		try {
-			let startTs: number | undefined;
-			let endTs: number | undefined;
-
-			if (append) {
-				startTs = this.resolvedStartTs;
-				endTs = this.resolvedEndTs;
-			} else {
-				const resolved = timeWindow ?? resolveWindow(this.timeRange);
-				startTs = resolved.startTs;
-				endTs = resolved.endTs;
-				this.resolvedStartTs = startTs;
-				this.resolvedEndTs = endTs;
+		$effect(() => {
+			const input = this.#input;
+			if (input === null) {
+				this.histogramLoading = false;
+				return;
 			}
+			const controller = new AbortController();
+			this.histogramLoading = true;
+			this.histogramError = null;
+			this.numHits = null;
+			fetchHistogram(input, controller.signal)
+				.then((result) => {
+					if (controller.signal.aborted) return;
+					this.histogramBuckets = result.buckets;
+					this.histogramIntervalSec = result.intervalSec;
+					this.numHits = result.totalDocCount;
+					// The raw query, not the composed one: a filter change merges into the roster.
+					const rosterKey = `${input.indexId}|${this.query}|${this.#rangeKey}`;
+					const fresh = this.#computeLevelTotals(result.buckets);
+					if (rosterKey !== this.#levelsRosterKey) {
+						this.#levelsRosterKey = rosterKey;
+						this.levels = fresh;
+					} else {
+						this.levels = this.#mergeLevels(this.levels, fresh);
+					}
+				})
+				.catch((e: unknown) => {
+					if (controller.signal.aborted) return;
+					this.histogramError = e instanceof Error ? e.message : 'Histogram fetch failed';
+					this.histogramBuckets = [];
+					this.numHits = null;
+				})
+				.finally(() => {
+					if (!controller.signal.aborted) this.histogramLoading = false;
+				});
+			return () => controller.abort();
+		});
 
-			const result = await searchLogs(
-				{
-					indexId: this.selectedIndex,
-					query: this.composedQuery,
-					startTs,
-					endTs,
-					sortDirection: this.sortDirection,
-					limit: BATCH_SIZE,
-					offset: append ? this.rawHits.length : 0
-				},
+		$effect(() => {
+			const indexId = this.#index;
+			if (indexId === null) return;
+			this.fieldConfig = null;
+			this.configError = null;
+			let stale = false;
+			getIndexConfig(indexId)
+				.then((cfg) => {
+					if (!stale) this.fieldConfig = cfg;
+				})
+				.catch((e: unknown) => {
+					if (stale) return;
+					this.configError = e instanceof Error ? e.message : 'Failed to load index config';
+				});
+			return () => {
+				stale = true;
+			};
+		});
+
+		// A failed load keeps the defaults until the next index; nothing else retries it.
+		$effect(() => {
+			const indexId = this.#index;
+			if (indexId === null) return;
+			const saveSeqAtStart = this.#prefSaveSeq;
+			let stale = false;
+			getPreferences(indexId)
+				.catch((e: unknown): Preferences => {
+					if (!stale) {
+						toast.error(e instanceof Error ? e.message : 'Failed to load display preferences');
+					}
+					return DEFAULT_PREFS;
+				})
+				.then((prefs) => {
+					if (stale) return;
+					this.#confirmedPrefs = prefs;
+					// Local edits win, but retain the server value for rollback if their save fails.
+					if (this.#prefSaveSeq !== saveSeqAtStart) return;
+					this.#savedFields = prefs.displayFields;
+					this.lineWrap = prefs.lineWrap;
+					this.displayMode = prefs.displayMode;
+				});
+			return () => {
+				stale = true;
+			};
+		});
+
+		// Reads the serialized range, never resolved seconds: a relative preset resolves to a new `now`
+		// on every read and would never settle.
+		$effect(() => {
+			const indexId = this.#index;
+			const cfg = this.fieldConfig;
+			const loadedFor = this.#fieldsKey;
+			void this.#fieldsReload;
+			// A config reload nulls `fieldConfig`, which tears down the run still loading the old fields.
+			if (indexId === null || cfg === null) {
+				this.fieldsLoading = false;
+				this.#fieldsLoadedFor = null;
+				return;
+			}
+			const controller = new AbortController();
+			this.fieldsLoading = true;
+			this.fieldsError = null;
+			loadFields(
+				indexId,
+				cfg,
+				untrack(() => resolveWindow(this.timeRange)),
 				controller.signal
-			);
-
-			if (!this.#searchGuard.isCurrent(requestId)) return;
-
-			if (append) {
-				this.rawHits = [...this.rawHits, ...result.rawHits];
-			} else {
-				this.rawHits = result.rawHits;
-				this.#expandedFolds.clear();
-				this.hasSearched = true;
-				this.#onFreshSearch?.();
-			}
-			this.#lastBatchFull = result.rawHits.length === BATCH_SIZE;
-			if (!append) {
-				this.elapsedTimeMicros = result.elapsedTimeMicros;
-			}
-
-			if (!append) this.#countPaths(result.rawHits);
-		} catch (e) {
-			if (isAbortError(e)) return;
-			if (!this.#searchGuard.isCurrent(requestId)) return;
-			if (append) return;
-			this.searchError = e instanceof Error ? e.message : 'Search failed';
-			this.rawHits = [];
-			this.#countPaths([]);
-			this.elapsedTimeMicros = 0;
-			this.#lastBatchFull = false;
-		} finally {
-			if (this.#searchGuard.isCurrent(requestId)) {
-				this.loadingMore = false;
-				if (!append) this.loading = 'idle';
-			}
-		}
+			)
+				.then((fields) => {
+					if (controller.signal.aborted) return;
+					this.#schemaFields = fields;
+					this.#fieldsLoadedFor = loadedFor;
+				})
+				.catch((e: unknown) => {
+					if (controller.signal.aborted) return;
+					this.fieldsError = e instanceof Error ? e.message : 'Failed to load fields';
+					this.#schemaFields = [];
+					this.#fieldsLoadedFor = null;
+				})
+				.finally(() => {
+					if (!controller.signal.aborted) this.fieldsLoading = false;
+				});
+			return () => controller.abort();
+		});
 	}
 
 	#canFetchMore(): boolean {
@@ -511,9 +567,23 @@ export class SearchStore {
 		);
 	}
 
+	/** Appends the next page of the current search, on its window; a new search aborts it. */
 	maybeLoadMore(): void {
-		if (!this.#canFetchMore()) return;
-		void this.#runSearch(true);
+		const run = this.#searchRun;
+		if (run === undefined || !this.#canFetchMore()) return;
+		// Appending happens ahead of the viewport, so it stays silent.
+		this.loadingMore = true;
+		searchLogs({ ...run.request, offset: this.rawHits.length }, run.signal)
+			.then((result) => {
+				if (run.signal.aborted) return;
+				this.rawHits = [...this.rawHits, ...result.rawHits];
+				this.#lastBatchFull = result.rawHits.length === BATCH_SIZE;
+			})
+			// A failed page leaves the list as it is; the next scroll retries it.
+			.catch(() => {})
+			.finally(() => {
+				if (!run.signal.aborted) this.loadingMore = false;
+			});
 	}
 
 	get listEnd(): 'more' | 'end' | 'capped' {
@@ -522,90 +592,9 @@ export class SearchStore {
 		return this.#lastBatchFull ? 'more' : 'end';
 	}
 
-	async #fetchHistogram(
-		timeWindow: { startTs: number; endTs: number },
-		force = false
-	): Promise<void> {
-		if (this.#disposed) return;
-		if (this.selectedIndex === null) return;
-
-		const fetchKey = `${this.selectedIndex}|${this.composedQuery}|${timeWindow.startTs}|${timeWindow.endTs}`;
-		if (!force && fetchKey === this.#histogramFetchedFor) {
-			this.#histogramAbort?.abort();
-			return;
-		}
-
-		// Counts are cleared below; only a completed request can be reused after that.
-		this.#histogramFetchedFor = null;
-		this.#histogramAbort?.abort();
-		const controller = new AbortController();
-		this.#histogramAbort = controller;
-		const requestId = this.#histogramGuard.next();
-		this.histogramLoading = true;
-		this.histogramError = null;
-		this.numHits = null;
-
-		try {
-			const result = await fetchHistogram(
-				{
-					indexId: this.selectedIndex,
-					query: this.composedQuery,
-					...timeWindow
-				} satisfies HistogramInput,
-				controller.signal
-			);
-			if (!this.#histogramGuard.isCurrent(requestId)) return;
-			this.histogramBuckets = result.buckets;
-			this.histogramIntervalSec = result.intervalSec;
-			this.numHits = result.totalDocCount;
-			this.#histogramFetchedFor = fetchKey;
-
-			const newKey = `${this.selectedIndex}|${this.query}|${serializeTimeRange(this.timeRange)}`;
-			const fresh = this.#computeLevelTotals(result.buckets);
-			if (newKey !== this.#levelsRosterKey) {
-				this.#levelsRosterKey = newKey;
-				this.levels = fresh;
-			} else {
-				this.levels = this.#mergeLevels(this.levels, fresh);
-			}
-		} catch (e) {
-			if (isAbortError(e)) return;
-			if (!this.#histogramGuard.isCurrent(requestId)) return;
-			this.#histogramFetchedFor = null;
-			this.histogramError = e instanceof Error ? e.message : 'Histogram fetch failed';
-			this.histogramBuckets = [];
-			this.numHits = null;
-		} finally {
-			if (this.#histogramGuard.isCurrent(requestId)) this.histogramLoading = false;
-		}
-	}
-
-	async #loadConfig(indexId: string): Promise<void> {
-		const requestId = this.#configGuard.next();
-		this.fieldConfig = null;
-		this.#fieldsFetchedFor = null;
-		this.#fieldsLoadedFor = null;
-		this.#fieldsAbort?.abort();
-		this.#fieldsGuard.next();
-		this.fieldsLoading = false;
-		this.configError = null;
-		try {
-			const cfg = await getIndexConfig(indexId);
-			if (!this.#configGuard.isCurrent(requestId)) return;
-			this.fieldConfig = cfg;
-		} catch (e) {
-			if (!this.#configGuard.isCurrent(requestId)) return;
-			this.configError = e instanceof Error ? e.message : 'Failed to load index config';
-		}
-	}
-
-	/** Re-runs field discovery for the current index; resets the cache key so the fields-load effect refires. */
+	/** Re-runs field discovery for the current index and range. */
 	reloadFields(): void {
-		const cfg = this.fieldConfig;
-		const indexId = this.selectedIndex;
-		if (!cfg || !indexId) return;
-		this.#fieldsFetchedFor = null;
-		this.#loadFields(indexId, cfg);
+		this.#fieldsReload += 1;
 	}
 
 	/** One fixed slice — the first page. Accumulating across scroll pages would reorder the panel. */
@@ -615,59 +604,6 @@ export class SearchStore {
 		} catch (e) {
 			console.warn('[search] field-path sampling failed', e);
 		}
-	}
-
-	async #loadFields(indexId: string, fieldConfig: FieldConfig): Promise<void> {
-		if (this.#disposed) return;
-		this.#fieldsAbort?.abort();
-		const controller = new AbortController();
-		this.#fieldsAbort = controller;
-		const requestId = this.#fieldsGuard.next();
-		const loadedFor = `${indexId}|${serializeTimeRange(this.timeRange)}|${this.refreshRevision}`;
-		this.fieldsLoading = true;
-		this.fieldsError = null;
-		try {
-			const fields = await loadFields(
-				indexId,
-				fieldConfig,
-				resolveWindow(this.timeRange),
-				controller.signal
-			);
-			if (controller.signal.aborted || !this.#fieldsGuard.isCurrent(requestId)) return;
-			this.#schemaFields = fields;
-			this.#fieldsLoadedFor = loadedFor;
-		} catch (e) {
-			if (isAbortError(e)) return;
-			if (!this.#fieldsGuard.isCurrent(requestId)) return;
-			this.fieldsError = e instanceof Error ? e.message : 'Failed to load fields';
-			this.#schemaFields = [];
-			this.#fieldsLoadedFor = null;
-		} finally {
-			if (this.#fieldsGuard.isCurrent(requestId)) this.fieldsLoading = false;
-		}
-	}
-
-	async #loadActiveFields(indexId: string): Promise<void> {
-		const requestId = this.#activeFieldsGuard.next();
-		const saveSeqAtStart = this.#prefSaveSeq;
-		let prefs: Preferences;
-		try {
-			prefs = await getPreferences(indexId);
-		} catch (e) {
-			if (this.#disposed) return;
-			if (!this.#activeFieldsGuard.isCurrent(requestId)) return;
-			// Reset cache key so the effect retries on the next reactive run.
-			this.#activeFieldsFetchedFor = null;
-			prefs = { displayFields: null, lineWrap: false, displayMode: 'table' };
-			toast.error(e instanceof Error ? e.message : 'Failed to load display preferences');
-		}
-		if (this.#disposed || !this.#activeFieldsGuard.isCurrent(requestId)) return;
-		this.#confirmedPrefs = prefs;
-		// Local edits win, but retain the server value for rollback if their save fails.
-		if (this.#prefSaveSeq !== saveSeqAtStart) return;
-		this.#savedFields = prefs.displayFields;
-		this.lineWrap = prefs.lineWrap;
-		this.displayMode = prefs.displayMode;
 	}
 
 	setActiveFields(next: string[]): void {
@@ -722,14 +658,11 @@ export class SearchStore {
 		return messageField ? [messageField] : [];
 	}
 
-	/** Aborts in-flight work and flushes any pending preference save. Installed as the
-	 *  destroy cleanup by setupAutoSearch; idempotent. */
+	/** Flushes any pending preference save; the request effects cancel themselves on teardown.
+	 *  Installed as the destroy cleanup by setupAutoSearch; idempotent. */
 	dispose(): void {
 		if (this.#disposed) return;
 		this.#disposed = true;
-		this.#searchAbort?.abort();
-		this.#histogramAbort?.abort();
-		this.#fieldsAbort?.abort();
 		const pending = this.#prefSave;
 		if (pending !== null) {
 			clearTimeout(pending.timer);
