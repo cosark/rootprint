@@ -31,6 +31,8 @@ errors and p95 latency for every service.
   and the whole stack is three containers: Rootprint, Quickwit and Postgres.
 - **Logs and traces, one place** - Open a trace from any log, and the logs behind any span.
 - **OpenTelemetry ingestion** - OTLP from any collector or SDK, plus NDJSON, Kafka, Kinesis and SQS.
+- **AI agent access** - A read-only [MCP server](https://docs.rootprint.io/api/mcp) lets Claude
+  Code, Cursor and other agents search your logs and traces.
 - **Team access** - Roles, scoped API keys, and sign-in with Google, GitHub or OpenID Connect.
 - **Admin controls** - Manage indexes, sources, field configuration and activity.
 - **Apache-2.0** licensed.

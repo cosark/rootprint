@@ -6,6 +6,49 @@ A release's optional `### Highlights` bullets (plain text, written for users) ar
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-10-20
+
+### Highlights
+
+- **Connect an AI agent.** Claude Code, Cursor and other MCP clients can search your logs and spans and read traces with your personal API key.
+- **Index overview.** Each index in **Settings → Indexes** opens on its size, ingest volume, ingest keys and search activity.
+- **Local or UTC time.** Turn on **Time in UTC** in the user menu to show timestamps, time ranges and charts in UTC.
+- **Services and the trace explorer** search time ranges longer than 30 days.
+
+### ⚠️ Breaking
+
+- **`GET /api/indexes/{indexId}/logs` counts every match only with `countAll=true`.** Without it, `numHits` can be lower than the real number of matches, and **Settings → Activity** shows no hit count for the search. ([#164](https://github.com/rootprint/rootprint/pull/164))
+- **`GET /api/traces/explore/spans` returns `total: null` when `offset` is above `0`.** The first page carries the count. ([#164](https://github.com/rootprint/rootprint/pull/164))
+- **API logs use OpenTelemetry attribute names.** The API writes one line per request, with `http.request.method`, `http.route`, `url.path`, `http.response.status_code`, `duration_ms`, `client.address`, `user.id`, `rootprint.api_key.id` and `rootprint.index.id`, at `warn` for 4xx responses and `error` for faults. `level` is a name such as `"info"` instead of a number, `time` is ISO 8601, `service` is now `service.name` beside `service.version`, and `requestId` is `http.request.id` on every line written during a request. Update log parsers and alerts that match the old fields. ([#169](https://github.com/rootprint/rootprint/pull/169))
+
+### Added
+
+- **MCP server at `/api/mcp`.** Seven read-only tools list indexes and fields, search logs and spans, count logs over time, list top field values and read whole traces. It accepts a personal or service account API key as a bearer token, never a session cookie, and shares the key owner's read rate limit. ([#160](https://github.com/rootprint/rootprint/pull/160))
+- **Overview tab on an index's settings page.** It opens first and shows the document count, size, compression ratio, splits and last event; events over the last 24 hours; index size over time; the ingest keys that write to the index; and its search activity, latency and top users and API keys. Drag across the events chart to open that range in Logs. ([#163](https://github.com/rootprint/rootprint/pull/163))
+- **Open in Logs**, or **Open in Traces** for the span store, on an index's settings page. ([#163](https://github.com/rootprint/rootprint/pull/163))
+- **`GET /api/indexes/{indexId}/describe`** returns an index's live document count, sizes, split count and newest event time. **`GET /api/admin/activity/indexes/{indexId}/summary`, `/latency` and `/actors`** report one index's search activity. ([#163](https://github.com/rootprint/rootprint/pull/163))
+- **Local or UTC time.** **Time in UTC** in the user menu switches timestamps, time-range labels and inputs, and chart axes to UTC. Your browser remembers the choice. ([#175](https://github.com/rootprint/rootprint/pull/175))
+
+### Changed
+
+- **Services, service pages and the trace explorer accept time ranges longer than 30 days**, as do `GET /api/services`, `GET /api/services/errors`, the trace explorer endpoints and the MCP `search_spans` tool. ([#175](https://github.com/rootprint/rootprint/pull/175))
+- **A time range gets the same bucket width on all charts**, from 1 second to 7 days. Short ranges label seconds on the axis. ([#175](https://github.com/rootprint/rootprint/pull/175))
+- **Leaving a page stops its searches.** Services, service pages and the trace explorer cancel their searches when you navigate away or change filters, and the API stops a Quickwit search when its client disconnects. The client gets an empty `499` response. The search audit records the search as `cancelled`, and **Settings → Activity** leaves it out of its counts and charts. ([#173](https://github.com/rootprint/rootprint/pull/173))
+- **Submitting the current log search again reruns it.** ([#176](https://github.com/rootprint/rootprint/pull/176))
+- **The API startup log reports the Quickwit version**, and ingest request logs report how many records Quickwit accepted and rejected. ([#169](https://github.com/rootprint/rootprint/pull/169))
+- Updated dependencies, including SvelteKit 3.1, Better Auth 1.7.10, Hono 4.13.13, Svelte 5.57.2, Vite 8.3.4, daisyUI 5.7.50 and dotenv 18. `source-map-js` 1.2.2 fixes GHSA-68fv-2mgg-jv7q. ([#154](https://github.com/rootprint/rootprint/pull/154), [#159](https://github.com/rootprint/rootprint/pull/159), [#162](https://github.com/rootprint/rootprint/pull/162), [#174](https://github.com/rootprint/rootprint/pull/174))
+
+### Removed
+
+- **Arrow-key navigation** between tabs on service and trace pages, and between options in the service picker. Enter in the service picker picks the first match. ([#172](https://github.com/rootprint/rootprint/pull/172))
+- **The `/settings/activity/users/<id>` redirect.** Use `/settings/users/<id>`. ([#156](https://github.com/rootprint/rootprint/pull/156))
+
+### Fixed
+
+- **A failed log search clears the previous results.** A failed **Load more** keeps the rows already loaded. ([#176](https://github.com/rootprint/rootprint/pull/176))
+- **Creating an API key refreshes the key list.** ([#156](https://github.com/rootprint/rootprint/pull/156))
+- **JSON and code blocks show as plain text while highlighting loads**, or if it fails. Revealing an API key shows a loading state, and a failed fetch shows an error and closes the dialog. ([#155](https://github.com/rootprint/rootprint/pull/155))
+
 ## [0.4.5] - 2026-10-01
 
 ### Highlights
